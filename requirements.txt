@@ -16,3 +16,6 @@ chromadb
 
 # Server web locale
 flask
+
+#Riconoscimento oggetti
+ultralytics
