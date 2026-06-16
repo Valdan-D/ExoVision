@@ -1,0 +1,18 @@
+# ExoVision — Dipendenze Python
+# Installazione: pip install -r requirements.txt
+
+# Metadati foto
+Pillow
+piexif
+
+# Metadati video
+ffmpeg-python
+
+# OCR
+easyocr
+
+# Database vettoriale
+chromadb
+
+# Server web locale
+flask
