@@ -345,7 +345,7 @@
       <li class="nav-item" data-view="import"><span class="ic">⬆️</span> Importa</li>
       <li class="nav-item" data-view="log"><span class="ic">📜</span> Log</li>
     </ul>
-    <div class="sidebar-footer">ExoVision Demo v0.4 — dati mock</div>
+    <div class="sidebar-footer">ExoVision v0.5</div>
   </nav>
 
   <main>
@@ -355,7 +355,7 @@
       <div class="search-wrap">
         <div class="search-bar">
           <span style="opacity:.6;">🔍</span>
-          <input type="text" id="searchInput" placeholder="Cerca per descrizione, oggetto, luogo, persona… es. “tramonto sul mare”">
+          <input type="text" id="searchInput" placeholder="Cerca per descrizione, oggetto, luogo, persona… es. "tramonto sul mare"">
           <button id="searchBtn">Cerca</button>
         </div>
       </div>
@@ -492,87 +492,11 @@
   "use strict";
 
   /* ============================================================
-     MOCK DATA
-  ============================================================ */
-  const RAW_ITEMS = [
-    {filename:"IMG_2034.jpg", folder:"Vacanza Sicilia 2023", tags:["mare","tramonto","viaggio"], date:"2023-07-12", size:"4.2 MB"},
-    {filename:"IMG_2035.jpg", folder:"Vacanza Sicilia 2023", tags:["mare","famiglia"], date:"2023-07-12", size:"3.8 MB"},
-    {filename:"IMG_2041.jpg", folder:"Vacanza Sicilia 2023", tags:[], date:null, size:null},
-    {filename:"VID_0099.mp4", folder:"Vacanza Sicilia 2023", tags:["mare","sport"], date:"2023-07-13", size:"128 MB", type:"video"},
-    {filename:"IMG_3310.jpg", folder:"Compleanno Marco", tags:["festa","famiglia","ritratto"], date:"2023-09-02", size:"2.9 MB"},
-    {filename:"IMG_3312.jpg", folder:"Compleanno Marco", tags:["festa","cibo"], date:"2023-09-02", size:null},
-    {filename:"IMG_3315.jpg", folder:"Compleanno Marco", tags:["festa","famiglia"], date:"2023-09-02", size:"3.1 MB"},
-    {filename:"IMG_4410.jpg", folder:"Escursione Dolomiti", tags:["montagna","natura","paesaggio"], date:"2023-08-20", size:"5.6 MB"},
-    {filename:"IMG_4411.jpg", folder:"Escursione Dolomiti", tags:["montagna","paesaggio"], date:"2023-08-20", size:"5.1 MB"},
-    {filename:"IMG_4420.jpg", folder:"Escursione Dolomiti", tags:[], date:"2023-08-21", size:"4.7 MB"},
-    {filename:"VID_0150.mp4", folder:"Escursione Dolomiti", tags:["montagna","sport","natura"], date:"2023-08-21", size:"210 MB", type:"video"},
-    {filename:"IMG_5501.jpg", folder:"Lavoro - Conferenza", tags:["città","architettura"], date:"2024-03-10", size:"3.3 MB"},
-    {filename:"IMG_5502.jpg", folder:"Lavoro - Conferenza", tags:["città"], date:null, size:"3.0 MB"},
-    {filename:"IMG_5505.jpg", folder:"Lavoro - Conferenza", tags:["ritratto","città"], date:"2024-03-11", size:"2.8 MB"},
-    {filename:"IMG_6010.jpg", folder:"Famiglia - Natale 2023", tags:["famiglia","festa","notte"], date:"2023-12-25", size:"4.0 MB"},
-    {filename:"IMG_6011.jpg", folder:"Famiglia - Natale 2023", tags:["famiglia","festa"], date:"2023-12-25", size:"3.9 MB"},
-    {filename:"IMG_6015.jpg", folder:"Famiglia - Natale 2023", tags:["famiglia","ritratto"], date:"2023-12-25", size:"3.5 MB"},
-    {filename:"IMG_6020.jpg", folder:"Famiglia - Natale 2023", tags:[], date:null, size:null},
-    {filename:"IMG_7100.jpg", folder:"Animali", tags:["animali","natura"], date:"2024-01-15", size:"2.2 MB"},
-    {filename:"IMG_7101.jpg", folder:"Animali", tags:["animali"], date:"2024-01-15", size:"2.4 MB"},
-    {filename:"IMG_7110.jpg", folder:"Animali", tags:["animali","ritratto"], date:"2024-01-16", size:null},
-    {filename:"IMG_8200.jpg", folder:"Città - Milano", tags:["città","architettura","notte"], date:"2024-05-02", size:"3.6 MB"},
-    {filename:"IMG_8201.jpg", folder:"Città - Milano", tags:["città","notte"], date:"2024-05-02", size:"3.4 MB"},
-    {filename:"IMG_8205.jpg", folder:"Città - Milano", tags:["città","paesaggio"], date:"2024-05-03", size:"3.2 MB"},
-    {filename:"VID_0210.mp4", folder:"Città - Milano", tags:["città","sport"], date:"2024-05-03", size:"95 MB", type:"video"},
-    {filename:"IMG_9001.jpg", folder:"Vacanza Sicilia 2023", tags:["mare","paesaggio","tramonto"], date:"2023-07-14", size:"4.5 MB"},
-    {filename:"IMG_9002.jpg", folder:"Animali", tags:["animali","natura","paesaggio"], date:"2024-01-17", size:"2.6 MB"},
-    {filename:"IMG_9003.jpg", folder:"Lavoro - Conferenza", tags:["città","architettura","notte"], date:null, size:"3.1 MB"}
-  ];
-
-  const DATA = RAW_ITEMS.map((it, idx) => {
-    const isVideo = it.type === "video";
-    return {
-      id: idx + 1,
-      filename: it.filename,
-      folder: it.folder,
-      tags: it.tags || [],
-      date: it.date || null,
-      size: it.size || null,
-      width: isVideo ? 1920 : 4032 - (idx % 4) * 200,
-      height: isVideo ? 1080 : 3024 - (idx % 4) * 150,
-      type: isVideo ? "video" : "image",
-      complete: !!(it.date && it.size && it.tags && it.tags.length > 0),
-      thumbUrl: `https://picsum.photos/seed/${encodeURIComponent(it.filename)}/420/320`,
-      largeUrl: `https://picsum.photos/seed/${encodeURIComponent(it.filename)}/900/650`
-    };
-  });
-
-  /* ============================================================
      UTILS
   ============================================================ */
   function tagsHTML(tags){
-    if (!tags || !tags.length) return '<span class="muted">Nessun tag</span>';
-    return tags.map(t => `<span class="chip">${t}</span>`).join("");
-  }
-  function incompleteBadge(item){
-    return item.complete ? "" : '<span class="badge badge-warning">⚠ Metadati incompleti</span>';
-  }
-  function hashFloat(n){
-    n = (n << 13) ^ n;
-    return ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 0x7fffffff;
-  }
-  function jaccard(a, b){
-    if (!a.tags.length || !b.tags.length) return 0;
-    const setA = new Set(a.tags), setB = new Set(b.tags);
-    let inter = 0;
-    setA.forEach(t => { if (setB.has(t)) inter++; });
-    const union = new Set([...setA, ...setB]).size;
-    return union ? inter / union : 0;
-  }
-  function getRelated(item){
-    return DATA.filter(d => d.folder === item.folder && d.id !== item.id);
-  }
-  function getSimilar(item, count){
-    return DATA.filter(d => d.id !== item.id)
-      .map(d => ({ d, score: Math.round(Math.min(1, jaccard(item, d) * 0.7 + hashFloat(item.id * 1000 + d.id) * 0.3) * 100) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, count);
+    if (!tags || !tags.length) return '<span class="muted">—</span>';
+    return tags.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("");
   }
   function escapeHtml(s){
     return (s || "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -580,13 +504,6 @@
   function nowTimeString(){
     const d = new Date();
     return d.toLocaleTimeString("it-IT", { hour12:false }) + " · " + d.toLocaleDateString("it-IT");
-  }
-  function matchesQuery(item, q){
-    if (!q) return true;
-    q = q.toLowerCase();
-    return item.filename.toLowerCase().includes(q) ||
-           item.folder.toLowerCase().includes(q) ||
-           item.tags.some(t => t.toLowerCase().includes(q));
   }
 
   /* ============================================================
@@ -644,67 +561,77 @@
   /* ============================================================
      RICERCA / GRID
   ============================================================ */
-  const resultsGrid = document.getElementById(“resultsGrid”);
-  const searchInput = document.getElementById(“searchInput”);
-  const searchBtn   = document.getElementById(“searchBtn”);
-  const searchMeta  = document.getElementById(“searchMeta”);
+  const resultsGrid = document.getElementById("resultsGrid");
+  const searchInput = document.getElementById("searchInput");
+  const searchBtn   = document.getElementById("searchBtn");
+  const searchMeta  = document.getElementById("searchMeta");
 
   function cardHTML(item) {
-    const isVideo   = item.tipo === “video”;
-    const playBadge = isVideo ? '<div class=”play-badge”>▶</div>' : “”;
-    const flag      = item.metadati_completi ? “” : '<div class=”incomplete-flag”>Incompleto</div>';
+    const isVideo   = item.tipo === "video";
+    const playBadge = isVideo ? '<div class="play-badge">▶</div>' : "";
+    const flag      = item.metadati_completi ? "" : '<div class="incomplete-flag">Incompleto</div>';
     return `
-      <div class=”card” data-id=”${item.id}”>
+      <div class="card" data-id="${item.id}">
         ${flag}${playBadge}
-        <img src=”${item.anteprima}” alt=”${escapeHtml(item.nome_file)}” loading=”lazy”>
-        <div class=”info”>
-          <div class=”fname”>${escapeHtml(item.nome_file)}</div>
-          <div class=”folder”>${isVideo ? “🎬 Video” : “🖼️ Immagine”}</div>
+        <img src="${item.anteprima}" alt="${escapeHtml(item.nome_file)}" loading="lazy">
+        <div class="info">
+          <div class="fname">${escapeHtml(item.nome_file)}</div>
+          <div class="folder">${isVideo ? "🎬 Video" : "🖼️ Immagine"}</div>
         </div>
       </div>`;
   }
 
   function bindCardClicks() {
-    resultsGrid.querySelectorAll(“.card”).forEach(card => {
-      card.addEventListener(“click”, () => openDetail(parseInt(card.dataset.id, 10)));
+    resultsGrid.querySelectorAll(".card").forEach(card => {
+      card.addEventListener("click", () => openDetail(parseInt(card.dataset.id, 10)));
     });
   }
 
   let searchDebounce = null;
 
   async function renderGrid(query) {
-    const q = (query || “”).trim();
-    resultsGrid.innerHTML = '<p class=”muted”>Caricamento…</p>';
-    searchMeta.textContent = “”;
+    const q = (query || "").trim();
+    resultsGrid.innerHTML = '<p class="muted">Caricamento…</p>';
+    searchMeta.textContent = "";
     try {
       if (q) {
         const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=48`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          resultsGrid.innerHTML = `<p class="muted">${escapeHtml(err.errore || "Errore nel caricamento.")}</p>`;
+          return;
+        }
         const data = await res.json();
         resultsGrid.innerHTML = data.results.length
-          ? data.results.map(cardHTML).join(“”)
-          : '<p class=”muted”>Nessun risultato trovato.</p>';
-        searchMeta.textContent = `${data.results.length} risultati per “${data.query}”`;
+          ? data.results.map(cardHTML).join("")
+          : '<p class="muted">Nessun risultato trovato.</p>';
+        searchMeta.textContent = `${data.results.length} risultati per "${data.query}"`;
       } else {
-        const res  = await fetch(“/api/files?limit=48”);
+        const res  = await fetch("/api/files?limit=48");
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          resultsGrid.innerHTML = `<p class="muted">${escapeHtml(err.errore || "Errore nel caricamento.")}</p>`;
+          return;
+        }
         const data = await res.json();
         resultsGrid.innerHTML = data.results.length
-          ? data.results.map(cardHTML).join(“”)
-          : '<p class=”muted”>Nessun file nell\'archivio.</p>';
-        searchMeta.textContent = `${data.totale} elementi nell'archivio`;
+          ? data.results.map(cardHTML).join("")
+          : '<p class="muted" style="text-align:center;padding:40px 0;">📂 Archivio vuoto.<br><span style="font-size:.85rem;">Esegui <code>python src/exovision_metadata.py &lt;cartella&gt;</code> per indicizzare i tuoi file.</span></p>';
+        searchMeta.textContent = data.totale ? `${data.totale} elementi nell'archivio` : "";
       }
       bindCardClicks();
     } catch (e) {
-      resultsGrid.innerHTML = '<p class=”muted”>Errore nel caricamento. Il server è avviato?</p>';
+      resultsGrid.innerHTML = '<p class="muted">Errore nel caricamento. Il server è avviato?</p>';
       console.error(e);
     }
   }
 
-  searchBtn.addEventListener(“click”, () => {
+  searchBtn.addEventListener("click", () => {
     renderGrid(searchInput.value);
-    if (searchInput.value.trim()) addLogEntry(“info”, `Ricerca eseguita: “${searchInput.value.trim()}”`);
+    if (searchInput.value.trim()) addLogEntry("info", `Ricerca eseguita: "${searchInput.value.trim()}"`);
   });
-  searchInput.addEventListener(“keydown”, e => { if (e.key === “Enter”) searchBtn.click(); });
-  searchInput.addEventListener(“input”, () => {
+  searchInput.addEventListener("keydown", e => { if (e.key === "Enter") searchBtn.click(); });
+  searchInput.addEventListener("input", () => {
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => renderGrid(searchInput.value), 350);
   });
@@ -935,25 +862,60 @@
   const metaIncompleteOnly = document.getElementById("metaIncompleteOnly");
   const metaCount = document.getElementById("metaCount");
 
-  function renderMetaTable(){
+  let metaData = [];
+
+  function renderMetaTable() {
     const q = metaSearchInput.value.trim().toLowerCase();
-    let rows = DATA.filter(d => matchesQuery(d, q));
-    if (metaIncompleteOnly.checked) rows = rows.filter(d => !d.complete);
+    let rows = metaData.filter(d => {
+      if (!q) return true;
+      return (d.nome_file || "").toLowerCase().includes(q) ||
+             (d.path || "").toLowerCase().includes(q) ||
+             (d.tags || []).some(t => t.toLowerCase().includes(q));
+    });
+    if (metaIncompleteOnly.checked) rows = rows.filter(d => !d.metadati_completi);
     metaCount.textContent = `${rows.length} elementi`;
-    metaTableBody.innerHTML = rows.map(item => `
-      <tr data-id="${item.id}">
-        <td><img class="thumb" src="${item.thumbUrl}" alt=""></td>
-        <td>${escapeHtml(item.filename)}</td>
-        <td>${escapeHtml(item.folder)}</td>
-        <td>${item.date || '<span class="muted">—</span>'}</td>
-        <td>${item.width}×${item.height}px${item.size ? " · " + item.size : ""}</td>
-        <td>${tagsHTML(item.tags)}</td>
-        <td>${item.complete ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>'}</td>
-      </tr>`).join("") || `<tr><td colspan="7" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
+    metaTableBody.innerHTML = rows.map(item => {
+      const cartella = item.path
+        ? item.path.replace(/\\/g, "/").split("/").slice(-2, -1)[0] || "—"
+        : "—";
+      const dim = item.larghezza && item.altezza
+        ? `${item.larghezza}×${item.altezza}px`
+        : item.tipo === "video" ? "Video" : "—";
+      const sizeStr = item.dimensione_bytes
+        ? " · " + (item.dimensione_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
+      return `
+        <tr data-id="${item.id}">
+          <td><img class="thumb" src="${item.anteprima}" alt=""></td>
+          <td>${escapeHtml(item.nome_file)}</td>
+          <td>${escapeHtml(cartella)}</td>
+          <td>${item.data || '<span class="muted">—</span>'}</td>
+          <td>${dim}${sizeStr}</td>
+          <td>${tagsHTML(item.tags)}</td>
+          <td>${item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>'}</td>
+        </tr>`;
+    }).join("") || `<tr><td colspan="7" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
     metaTableBody.querySelectorAll("tr[data-id]").forEach(tr => {
       tr.addEventListener("click", () => openDetail(parseInt(tr.dataset.id, 10)));
     });
   }
+
+  async function loadMetaTable() {
+    metaTableBody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:20px;">Caricamento…</td></tr>`;
+    try {
+      const res = await fetch("/api/files?limit=500");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        metaTableBody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:20px;">${escapeHtml(err.errore || "Errore nel caricamento.")}</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      metaData = data.results;
+      renderMetaTable();
+    } catch (e) {
+      metaTableBody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:20px;">Errore nel caricamento.</td></tr>`;
+    }
+  }
+
   metaSearchInput.addEventListener("input", renderMetaTable);
   metaIncompleteOnly.addEventListener("change", renderMetaTable);
 
@@ -1086,32 +1048,36 @@
     });
   });
 
-  // seed initial mock log history (oldest -> newest, then we reverse for display)
-  const seedLog = [
-    ["info","Servizio ExoVision avviato"],
-    ["info","Archivio caricato: 27 elementi trovati"],
-    ["warning","7 elementi con metadati incompleti rilevati"],
-    ["info","Indice semantico ricostruito (CLIP embeddings v2)"],
-    ["info","Connessione al modulo cloud verificata"],
-    ["error","Timeout durante l'estrazione frame di VID_0150.mp4"],
-    ["info","Frame extra ri-elaborato con successo"],
-    ["warning","Spazio su disco archivio inferiore al 15%"],
-    ["info","Backup automatico indice completato"],
-    ["info","Sessione utente avviata"]
-  ];
-  const baseTime = Date.now() - seedLog.length * 7 * 60000;
-  seedLog.forEach(([level, message], i) => {
-    logEntries.push({ level, message, time: new Date(baseTime + i * 7 * 60000).toLocaleTimeString("it-IT",{hour12:false}) + " · " + new Date(baseTime + i*7*60000).toLocaleDateString("it-IT") });
-  });
-  logEntries.reverse();
+  async function loadStatsIntoLog() {
+    try {
+      const res = await fetch("/api/stats");
+      if (!res.ok) {
+        addLogEntry("warning", "Statistiche archivio non disponibili");
+        return;
+      }
+      const s = await res.json();
+      addLogEntry("info", "Sessione utente avviata");
+      if (s.oggetti?.rilevamenti_totali > 0)
+        addLogEntry("info", `Object detection: ${s.oggetti.rilevamenti_totali} rilevamenti totali`);
+      if (s.ocr?.file_con_testo > 0)
+        addLogEntry("info", `OCR: ${s.ocr.file_con_testo} file con testo rilevato`);
+      if (s.file?.incompleti > 0)
+        addLogEntry("warning", `${s.file.incompleti} elementi con metadati incompleti`);
+      addLogEntry("info", `Archivio caricato: ${s.file.totale} elementi (${s.file.foto} foto, ${s.file.video} video)`);
+      addLogEntry("info", "Servizio ExoVision avviato");
+    } catch (e) {
+      addLogEntry("info", "Servizio ExoVision avviato");
+    }
+  }
 
   /* ============================================================
      INIT
   ============================================================ */
   loadConfig();
   renderGrid("");
-  renderMetaTable();
+  loadMetaTable();
   renderLog();
+  loadStatsIntoLog();
 })();
 </script>
 </body>

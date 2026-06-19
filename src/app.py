@@ -26,12 +26,12 @@ DB_PATH = os.environ.get("EXOVISION_DB", load_config()["archivio"]["db"])
 
 # ── Utility DB ────────────────────────────────────────────────────────────────
 
+def db_ready():
+    return Path(DB_PATH).exists()
+
 def get_db():
-    """Apre una connessione al database SQLite."""
-    if not Path(DB_PATH).exists():
-        abort(503, description="Database non trovato. Esegui prima exovision_metadata.py.")
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # accesso per nome colonna
+    conn.row_factory = sqlite3.Row
     return conn
 
 
@@ -63,8 +63,8 @@ def search():
     query = request.args.get("q", "").strip()
     limit = int(request.args.get("limit", 20))
 
-    if not query:
-        return jsonify({"query": "", "results": []})
+    if not query or not db_ready():
+        return jsonify({"query": query, "results": []})
 
     conn = get_db()
     try:
@@ -116,6 +116,9 @@ def file_detail(file_id):
     Risposta JSON:
       { file, metadati, ocr, oggetti, simili }
     """
+    if not db_ready():
+        abort(404, description="Database non ancora inizializzato.")
+
     conn = get_db()
     try:
         # Dati base
@@ -199,19 +202,30 @@ def file_list():
     tipo  = request.args.get("tipo", None)
     offset = (page - 1) * limit
 
+    if not db_ready():
+        return jsonify({"page": page, "limit": limit, "totale": 0, "pagine": 0, "results": []})
+
     conn = get_db()
     try:
-        where = "WHERE tipo = :tipo" if tipo else ""
+        where = "WHERE f.tipo = :tipo" if tipo else ""
         params = {"limit": limit, "offset": offset, "tipo": tipo}
 
         totale = conn.execute(
-            f"SELECT COUNT(*) FROM files {where}", params
+            f"SELECT COUNT(*) FROM files f {where}", params
         ).fetchone()[0]
 
         rows = conn.execute(f"""
-            SELECT id, nome_file, tipo, path, metadati_completi
-            FROM files {where}
-            ORDER BY data_indicizzazione DESC
+            SELECT
+                f.id, f.nome_file, f.tipo, f.path, f.metadati_completi,
+                f.dimensione_bytes, f.data_modifica,
+                mf.larghezza, mf.altezza, mf.data_scatto,
+                GROUP_CONCAT(DISTINCT og.oggetto) AS tag_string
+            FROM files f
+            LEFT JOIN metadati_foto mf ON f.id = mf.file_id
+            LEFT JOIN oggetti og        ON f.id = og.file_id AND og.confidenza >= 0.5
+            {where}
+            GROUP BY f.id
+            ORDER BY f.data_indicizzazione DESC
             LIMIT :limit OFFSET :offset
         """, params).fetchall()
 
@@ -225,8 +239,14 @@ def file_list():
                     "id":                row["id"],
                     "nome_file":         row["nome_file"],
                     "tipo":              row["tipo"],
+                    "path":              row["path"],
                     "metadati_completi": bool(row["metadati_completi"]),
                     "anteprima":         f"/api/thumb/{row['id']}",
+                    "dimensione_bytes":  row["dimensione_bytes"],
+                    "data":              row["data_scatto"] or (row["data_modifica"] or "").split("T")[0] or None,
+                    "larghezza":         row["larghezza"],
+                    "altezza":           row["altezza"],
+                    "tags":              row["tag_string"].split(",") if row["tag_string"] else [],
                 }
                 for row in rows
             ]
@@ -242,6 +262,13 @@ def stats():
     """
     Statistiche generali dell'archivio — utile per la scheda Log nell'interfaccia.
     """
+    if not db_ready():
+        return jsonify({
+            "file":    {"totale": 0, "foto": 0, "video": 0, "incompleti": 0},
+            "ocr":     {"file_con_testo": 0},
+            "oggetti": {"rilevamenti_totali": 0}
+        })
+
     conn = get_db()
     try:
         totali = conn.execute("""
@@ -288,6 +315,9 @@ def thumb(file_id):
     NOTE PER STEFANO: per ora serve il file originale direttamente.
     In futuro si può aggiungere ridimensionamento con Pillow.
     """
+    if not db_ready():
+        abort(404)
+
     conn = get_db()
     try:
         row = conn.execute(
@@ -345,19 +375,13 @@ def save_config():
 def not_found(e):
     return jsonify({"errore": str(e)}), 404
 
-@app.errorhandler(503)
-def service_unavailable(e):
-    return jsonify({"errore": str(e)}), 503
-
 
 # ── Avvio ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("\n╔══════════════════════════════════╗")
-    print("║     ExoVision · Server Flask     ║")
-    print("╚══════════════════════════════════╝")
-    print(f"\n  Database: {DB_PATH}")
-    print(f"  UI:       src/UI/exovision.html")
+    print("\n=== ExoVision - Server Flask ===")
+    print(f"  Database : {DB_PATH} {'(trovato)' if db_ready() else '(non ancora creato)'}")
+    print(f"  UI       : src/UI/exovision.html")
     print(f"\n  Apri il browser su: http://localhost:5000\n")
 
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="127.0.0.1", port=5000, threaded=True, use_reloader=False)
