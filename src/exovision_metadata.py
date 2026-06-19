@@ -10,6 +10,16 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+# ─── Configurazione ───────────────────────────────────────────────────────────
+
+_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+
+def _load_config():
+    with open(_CONFIG_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+_cfg = _load_config()
+
 # Pillow per immagini
 try:
     from PIL import Image
@@ -296,8 +306,10 @@ def inserisci_metadati_video(conn: sqlite3.Connection, file_id: int, meta: dict)
 
 # ─── SCAN CARTELLA ────────────────────────────────────────────────────────────
 
-def scansiona_cartella(cartella: str, db_path: str = "exovision.db"):
+def scansiona_cartella(cartella: str, db_path: str = None):
     """Scansiona una cartella e indicizza tutti i file multimediali."""
+    if db_path is None:
+        db_path = _cfg["archivio"]["db"]
     conn = init_db(db_path)
     cartella = Path(cartella)
 

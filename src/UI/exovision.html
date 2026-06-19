@@ -581,6 +581,13 @@
     const d = new Date();
     return d.toLocaleTimeString("it-IT", { hour12:false }) + " · " + d.toLocaleDateString("it-IT");
   }
+  function matchesQuery(item, q){
+    if (!q) return true;
+    q = q.toLowerCase();
+    return item.filename.toLowerCase().includes(q) ||
+           item.folder.toLowerCase().includes(q) ||
+           item.tags.some(t => t.toLowerCase().includes(q));
+  }
 
   /* ============================================================
      TOAST
@@ -637,116 +644,244 @@
   /* ============================================================
      RICERCA / GRID
   ============================================================ */
-  const resultsGrid = document.getElementById("resultsGrid");
-  const searchInput = document.getElementById("searchInput");
-  const searchBtn = document.getElementById("searchBtn");
-  const searchMeta = document.getElementById("searchMeta");
+  const resultsGrid = document.getElementById(“resultsGrid”);
+  const searchInput = document.getElementById(“searchInput”);
+  const searchBtn   = document.getElementById(“searchBtn”);
+  const searchMeta  = document.getElementById(“searchMeta”);
 
-  function matchesQuery(item, q){
-    if (!q) return true;
-    q = q.toLowerCase();
-    return item.filename.toLowerCase().includes(q) ||
-           item.folder.toLowerCase().includes(q) ||
-           item.tags.some(t => t.toLowerCase().includes(q));
-  }
-
-  function cardHTML(item){
-    const playBadge = item.type === "video" ? '<div class="play-badge">▶</div>' : "";
-    const flag = item.complete ? "" : '<div class="incomplete-flag">Incompleto</div>';
+  function cardHTML(item) {
+    const isVideo   = item.tipo === “video”;
+    const playBadge = isVideo ? '<div class=”play-badge”>▶</div>' : “”;
+    const flag      = item.metadati_completi ? “” : '<div class=”incomplete-flag”>Incompleto</div>';
     return `
-      <div class="card" data-id="${item.id}">
+      <div class=”card” data-id=”${item.id}”>
         ${flag}${playBadge}
-        <img src="${item.thumbUrl}" alt="${escapeHtml(item.filename)}" loading="lazy">
-        <div class="info">
-          <div class="fname">${escapeHtml(item.filename)}</div>
-          <div class="folder">${escapeHtml(item.folder)}</div>
-          <div class="chips">${item.tags.slice(0,3).map(t=>`<span class="chip">${t}</span>`).join("")}</div>
+        <img src=”${item.anteprima}” alt=”${escapeHtml(item.nome_file)}” loading=”lazy”>
+        <div class=”info”>
+          <div class=”fname”>${escapeHtml(item.nome_file)}</div>
+          <div class=”folder”>${isVideo ? “🎬 Video” : “🖼️ Immagine”}</div>
         </div>
       </div>`;
   }
 
-  function renderGrid(query){
-    const q = (query || "").trim();
-    const filtered = DATA.filter(d => matchesQuery(d, q));
-    resultsGrid.innerHTML = filtered.map(cardHTML).join("") || '<p class="muted">Nessun risultato trovato.</p>';
-    searchMeta.textContent = q
-      ? `${filtered.length} risultati semantici per “${q}”`
-      : `${DATA.length} elementi nell'archivio`;
-    resultsGrid.querySelectorAll(".card").forEach(card => {
-      card.addEventListener("click", () => openDetail(parseInt(card.dataset.id, 10)));
+  function bindCardClicks() {
+    resultsGrid.querySelectorAll(“.card”).forEach(card => {
+      card.addEventListener(“click”, () => openDetail(parseInt(card.dataset.id, 10)));
     });
   }
 
-  searchBtn.addEventListener("click", () => {
+  let searchDebounce = null;
+
+  async function renderGrid(query) {
+    const q = (query || “”).trim();
+    resultsGrid.innerHTML = '<p class=”muted”>Caricamento…</p>';
+    searchMeta.textContent = “”;
+    try {
+      if (q) {
+        const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=48`);
+        const data = await res.json();
+        resultsGrid.innerHTML = data.results.length
+          ? data.results.map(cardHTML).join(“”)
+          : '<p class=”muted”>Nessun risultato trovato.</p>';
+        searchMeta.textContent = `${data.results.length} risultati per “${data.query}”`;
+      } else {
+        const res  = await fetch(“/api/files?limit=48”);
+        const data = await res.json();
+        resultsGrid.innerHTML = data.results.length
+          ? data.results.map(cardHTML).join(“”)
+          : '<p class=”muted”>Nessun file nell\'archivio.</p>';
+        searchMeta.textContent = `${data.totale} elementi nell'archivio`;
+      }
+      bindCardClicks();
+    } catch (e) {
+      resultsGrid.innerHTML = '<p class=”muted”>Errore nel caricamento. Il server è avviato?</p>';
+      console.error(e);
+    }
+  }
+
+  searchBtn.addEventListener(“click”, () => {
     renderGrid(searchInput.value);
-    if (searchInput.value.trim()) addLogEntry("info", `Ricerca semantica eseguita: "${searchInput.value.trim()}"`);
+    if (searchInput.value.trim()) addLogEntry(“info”, `Ricerca eseguita: “${searchInput.value.trim()}”`);
   });
-  searchInput.addEventListener("keydown", e => { if (e.key === "Enter") searchBtn.click(); });
-  searchInput.addEventListener("input", () => renderGrid(searchInput.value));
+  searchInput.addEventListener(“keydown”, e => { if (e.key === “Enter”) searchBtn.click(); });
+  searchInput.addEventListener(“input”, () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => renderGrid(searchInput.value), 350);
+  });
 
   /* ============================================================
      DETTAGLIO IMMAGINE
   ============================================================ */
-  const detailOverlay = document.getElementById("detailOverlay");
-  const detailBody = document.getElementById("detailBody");
+  const detailOverlay    = document.getElementById("detailOverlay");
+  const detailBody       = document.getElementById("detailBody");
   const detailBreadcrumb = document.getElementById("detailBreadcrumb");
-  const closeDetailBtn = document.getElementById("closeDetailBtn");
+  const closeDetailBtn   = document.getElementById("closeDetailBtn");
 
-  function thumbRowHTML(items, withScore){
-    if (!items.length) return '<p class="muted">Nessun elemento trovato.</p>';
-    return `<div class="thumb-row">${items.map(entry => {
-      const item = withScore ? entry.d : entry;
-      const score = withScore ? `<div class="sim-badge">${entry.score}% simile</div>` : "";
-      return `
-        <div class="thumb-card" data-id="${item.id}">
-          ${score}
-          <img src="${item.thumbUrl}" alt="${escapeHtml(item.filename)}" loading="lazy">
-          <div class="tlabel">${escapeHtml(item.filename)}</div>
-        </div>`;
-    }).join("")}</div>`;
+  function similiRowHTML(items) {
+    if (!items || !items.length) return '<p class="muted">Nessun elemento simile trovato.</p>';
+    return `<div class="thumb-row">${items.map(item => `
+      <div class="thumb-card" data-id="${item.id}">
+        <img src="${item.anteprima}" alt="${escapeHtml(item.nome_file)}" loading="lazy">
+        <div class="tlabel">${escapeHtml(item.nome_file)}</div>
+      </div>`).join("")}</div>`;
   }
 
-  function openDetail(id){
-    const item = DATA.find(d => d.id === id);
-    if (!item) return;
-    const related = getRelated(item);
-    const similar = getSimilar(item, 6);
+  async function openDetail(id) {
+    detailBody.innerHTML = '<p class="muted" style="padding:30px;">Caricamento…</p>';
+    detailOverlay.classList.add("show");
+    window.scrollTo(0, 0);
 
-    detailBreadcrumb.textContent = item.folder;
-    detailBody.innerHTML = `
-      <div class="detail-main">
-        <div class="detail-img-wrap">
-          <img src="${item.largeUrl}" alt="${escapeHtml(item.filename)}">
-        </div>
-        <div class="detail-meta">
-          <h2>${escapeHtml(item.filename)}</h2>
-          ${incompleteBadge(item)}
-          <div class="meta-row"><span>Tipo</span><span>${item.type === "video" ? "🎬 Video" : "🖼️ Immagine"}</span></div>
-          <div class="meta-row"><span>Data</span><span>${item.date || "—"}</span></div>
-          <div class="meta-row"><span>Dimensioni</span><span>${item.width} × ${item.height} px</span></div>
-          <div class="meta-row"><span>Dimensione file</span><span>${item.size || "—"}</span></div>
-          <div class="meta-row"><span>Cartella / evento</span><span>${escapeHtml(item.folder)}</span></div>
-          <div class="meta-tags">
-            <span style="font-size:.85rem;color:var(--text-muted);">Tag semantici</span>
-            <div class="chips">${tagsHTML(item.tags)}</div>
+    try {
+      const res = await fetch(`/api/file/${id}`);
+      if (!res.ok) {
+        detailBody.innerHTML = '<p class="muted" style="padding:30px;">File non trovato.</p>';
+        return;
+      }
+      const data = await res.json();
+      const f    = data.file;
+      const meta = data.metadati || {};
+      const ocr  = data.ocr     || {};
+      const isVideo = f.tipo === "video";
+
+      detailBreadcrumb.textContent = f.path || "";
+
+      const dimensioni = meta.larghezza && meta.altezza
+        ? `${meta.larghezza} × ${meta.altezza} px` : "—";
+      const dataVisibile = meta.data_scatto || (f.data_modifica || "").split("T")[0] || "—";
+      const sizeVisibile = f.dimensione_bytes
+        ? (f.dimensione_bytes / (1024 * 1024)).toFixed(1) + " MB" : "—";
+
+      const metaRows = isVideo ? `
+        <div class="meta-row"><span>Durata</span><span>${meta.durata_secondi ? meta.durata_secondi.toFixed(1) + " s" : "—"}</span></div>
+        <div class="meta-row"><span>Risoluzione</span><span>${dimensioni}</span></div>
+        <div class="meta-row"><span>Framerate</span><span>${meta.framerate ? meta.framerate + " fps" : "—"}</span></div>
+        <div class="meta-row"><span>Codec video</span><span>${meta.codec_video || "—"}</span></div>
+        <div class="meta-row"><span>Codec audio</span><span>${meta.codec_audio || "—"}</span></div>
+      ` : `
+        <div class="meta-row"><span>Data scatto</span><span>${meta.data_scatto || "—"}</span></div>
+        <div class="meta-row"><span>Risoluzione</span><span>${dimensioni}</span></div>
+        <div class="meta-row"><span>Fotocamera</span><span>${[meta.camera_make, meta.camera_model].filter(Boolean).join(" ") || "—"}</span></div>
+        <div class="meta-row"><span>ISO</span><span>${meta.iso || "—"}</span></div>
+        <div class="meta-row"><span>Apertura</span><span>${meta.apertura || "—"}</span></div>
+        <div class="meta-row"><span>Otturatore</span><span>${meta.otturatore || "—"}</span></div>
+        ${meta.gps_lat ? `<div class="meta-row"><span>GPS</span><span>${meta.gps_lat.toFixed(5)}, ${meta.gps_lon.toFixed(5)}</span></div>` : ""}
+      `;
+
+      const oggettiChips = data.oggetti && data.oggetti.length
+        ? data.oggetti.map(o =>
+            `<span class="chip">${escapeHtml(o.oggetto)} <span style="opacity:.6">${Math.round(o.confidenza * 100)}%</span></span>`
+          ).join("")
+        : '<span class="muted">Nessun oggetto rilevato</span>';
+
+      const ocrBlock = ocr.testo
+        ? `<blockquote style="margin:0;padding:12px 16px;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:var(--radius-sm);font-size:.88rem;line-height:1.6;">${escapeHtml(ocr.testo)}</blockquote>
+           <div class="subtle" style="margin-top:6px;">Confidenza: ${ocr.confidenza ? Math.round(ocr.confidenza * 100) + "%" : "—"}</div>`
+        : '<p class="muted">Nessun testo rilevato.</p>';
+
+      const mediaEl = isVideo
+        ? `<video controls style="width:100%;max-height:640px;border-radius:var(--radius);" src="/api/thumb/${f.id}"></video>`
+        : `<img src="/api/thumb/${f.id}" alt="${escapeHtml(f.nome_file)}">`;
+
+      detailBody.innerHTML = `
+        <div class="detail-main">
+          <div class="detail-img-wrap">${mediaEl}</div>
+          <div class="detail-meta">
+            <h2>${escapeHtml(f.nome_file)}</h2>
+            ${!f.metadati_completi ? '<span class="badge badge-warning" style="display:inline-block;margin-bottom:14px;">⚠ Metadati incompleti</span>' : ""}
+            <div class="meta-row"><span>Tipo</span><span>${isVideo ? "🎬 Video" : "🖼️ Immagine"}</span></div>
+            <div class="meta-row"><span>Data</span><span>${dataVisibile}</span></div>
+            <div class="meta-row"><span>Dimensione file</span><span>${sizeVisibile}</span></div>
+            ${metaRows}
+            <div class="meta-tags">
+              <span style="font-size:.85rem;color:var(--text-muted);">Oggetti rilevati</span>
+              <div class="chips" style="margin-top:8px;">${oggettiChips}</div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="section-title">🗂️ Immagini collegate <span class="count">(stessa cartella/evento — ${related.length})</span></div>
-      ${thumbRowHTML(related, false)}
+        <div class="section-title">📝 Testo OCR</div>
+        ${ocrBlock}
 
-      <div class="section-title">🧬 Simili <span class="count">(embedding semanticamente vicini)</span></div>
-      ${thumbRowHTML(similar, true)}
-    `;
-    detailBody.querySelectorAll(".thumb-card").forEach(card => {
-      card.addEventListener("click", () => openDetail(parseInt(card.dataset.id, 10)));
-    });
-    detailOverlay.classList.add("show");
-    window.scrollTo(0,0);
+        <div class="section-title">🧬 Simili <span class="count">(${data.simili.length})</span></div>
+        ${similiRowHTML(data.simili)}
+      `;
+
+      detailBody.querySelectorAll(".thumb-card").forEach(card => {
+        card.addEventListener("click", () => openDetail(parseInt(card.dataset.id, 10)));
+      });
+    } catch (e) {
+      detailBody.innerHTML = '<p class="muted" style="padding:30px;">Errore nel caricamento del dettaglio.</p>';
+      console.error(e);
+    }
   }
-  function closeDetail(){ detailOverlay.classList.remove("show"); }
+
+  function closeDetail() { detailOverlay.classList.remove("show"); }
   closeDetailBtn.addEventListener("click", closeDetail);
+
+  /* ============================================================
+     CONFIG API
+  ============================================================ */
+  async function loadConfig() {
+    try {
+      const res = await fetch("/api/config");
+      if (!res.ok) return;
+      const cfg = await res.json();
+
+      if (cfg.archivio?.percorso !== undefined)
+        archivePathInput.value = cfg.archivio.percorso;
+
+      if (cfg.video?.frame_interval_secondi !== undefined) {
+        frameIntervalSlider.value = cfg.video.frame_interval_secondi;
+        frameIntervalValue.textContent = `${cfg.video.frame_interval_secondi} secondi`;
+      }
+
+      if (cfg.ricerca?.soglia_similarita !== undefined) {
+        const pct = Math.round(cfg.ricerca.soglia_similarita * 100);
+        thresholdSlider.value = pct;
+        thresholdValue.textContent = `${pct}%`;
+      }
+
+      if (cfg.ricerca?.modalita) {
+        modeSegmented.querySelectorAll(".seg-btn").forEach(b =>
+          b.classList.toggle("active", b.dataset.mode === cfg.ricerca.modalita)
+        );
+        modeDesc.textContent = modeDescs[cfg.ricerca.modalita] || "";
+      }
+
+      if (cfg.ui?.tema_scuro !== undefined)
+        setDarkMode(cfg.ui.tema_scuro, false);
+
+    } catch (e) {
+      console.warn("Config non disponibile, uso valori di default.", e);
+    }
+  }
+
+  async function saveConfig() {
+    const activeMode = modeSegmented.querySelector(".seg-btn.active")?.dataset.mode || "locale";
+    const payload = {
+      archivio: { percorso: archivePathInput.value.trim() },
+      video:    { frame_interval_secondi: parseInt(frameIntervalSlider.value, 10) },
+      ricerca:  {
+        soglia_similarita: parseInt(thresholdSlider.value, 10) / 100,
+        modalita: activeMode
+      },
+      ui: { tema_scuro: document.body.classList.contains("dark") }
+    };
+
+    try {
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error(await res.text());
+      showToast("✅ Impostazioni salvate");
+      addLogEntry("info", "Impostazioni aggiornate dall'utente");
+    } catch (e) {
+      showToast("❌ Errore nel salvataggio");
+      addLogEntry("error", "Errore salvataggio impostazioni: " + e.message);
+    }
+  }
 
   /* ============================================================
      IMPOSTAZIONI
@@ -790,10 +925,7 @@
     }
   });
 
-  document.getElementById("saveSettingsBtn").addEventListener("click", () => {
-    showToast("✅ Impostazioni salvate");
-    addLogEntry("info", "Impostazioni aggiornate dall'utente");
-  });
+  document.getElementById("saveSettingsBtn").addEventListener("click", saveConfig);
 
   /* ============================================================
      METADATI
@@ -976,6 +1108,7 @@
   /* ============================================================
      INIT
   ============================================================ */
+  loadConfig();
   renderGrid("");
   renderMetaTable();
   renderLog();

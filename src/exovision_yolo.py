@@ -6,6 +6,7 @@ Nota: alla prima esecuzione scarica il modello (~6MB), poi lavora offline.
 
 import sqlite3
 import sys
+import json
 from pathlib import Path
 from datetime import datetime
 
@@ -20,14 +21,17 @@ except ImportError:
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
 
-# Modello da usare — yolov8n è il più leggero (nano)
-# Opzioni in ordine di peso: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x
-MODELLO = "yolov8n.pt"
+_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
 
-# Soglia minima di confidenza (0.0 - 1.0)
-CONFIDENZA_MINIMA = 0.4
+def _load_config():
+    with open(_CONFIG_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
-# Estensioni immagine supportate
+_cfg = _load_config()
+
+MODELLO           = _cfg["yolo"]["modello"]
+CONFIDENZA_MINIMA = _cfg["yolo"]["confidenza_minima"]
+
 FOTO_EXT = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".bmp"}
 
 
@@ -129,11 +133,13 @@ def rileva_oggetti(model: YOLO, path: str) -> list:
 
 # ─── Scan cartella ────────────────────────────────────────────────────────────
 
-def processa_cartella(cartella: str, db_path: str = "exovision.db"):
+def processa_cartella(cartella: str, db_path: str = None):
     """
     Scansiona una cartella, rileva oggetti in ogni immagine
     e salva i risultati in SQLite.
     """
+    if db_path is None:
+        db_path = _cfg["archivio"]["db"]
     conn = sqlite3.connect(db_path)
     init_tabella_oggetti(conn)
 

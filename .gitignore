@@ -4,3 +4,5 @@
 .env
 data/
 *.DS_Store
+config.json
+*.pt

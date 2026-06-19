@@ -7,14 +7,21 @@ Poi apri il browser su: http://localhost:5000
 
 import sqlite3
 import os
+import json
 from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, abort
 
-app = Flask(__name__, static_folder="ui", static_url_path="")
+app = Flask(__name__, static_folder="UI", static_url_path="")
 
 # ── Configurazione ────────────────────────────────────────────────────────────
 
-DB_PATH = os.environ.get("EXOVISION_DB", "exovision.db")
+CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+
+def load_config():
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+DB_PATH = os.environ.get("EXOVISION_DB", load_config()["archivio"]["db"])
 
 
 # ── Utility DB ────────────────────────────────────────────────────────────────
@@ -33,7 +40,7 @@ def get_db():
 @app.route("/")
 def index():
     """Serve l'interfaccia HTML principale."""
-    return send_from_directory("ui", "index.html")
+    return send_from_directory("UI", "exovision.html")
 
 
 # ── API — Ricerca ─────────────────────────────────────────────────────────────
@@ -299,6 +306,39 @@ def thumb(file_id):
         conn.close()
 
 
+# ── API — Configurazione ─────────────────────────────────────────────────────
+
+@app.route("/api/config", methods=["GET"])
+def get_config():
+    """Restituisce il contenuto di config.json."""
+    return jsonify(load_config())
+
+
+@app.route("/api/config", methods=["POST"])
+def save_config():
+    """
+    Salva le impostazioni ricevute in config.json.
+    Il body JSON può contenere solo le chiavi da aggiornare (merge parziale).
+    """
+    updates = request.get_json(silent=True)
+    if not updates:
+        abort(400, description="Body JSON mancante o non valido.")
+
+    cfg = load_config()
+
+    # Merge un livello di profondità — sufficiente per la struttura attuale
+    for section, values in updates.items():
+        if section in cfg and isinstance(cfg[section], dict) and isinstance(values, dict):
+            cfg[section].update(values)
+        else:
+            cfg[section] = values
+
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+    return jsonify({"ok": True, "config": cfg})
+
+
 # ── Gestione errori ───────────────────────────────────────────────────────────
 
 @app.errorhandler(404)
@@ -317,7 +357,7 @@ if __name__ == "__main__":
     print("║     ExoVision · Server Flask     ║")
     print("╚══════════════════════════════════╝")
     print(f"\n  Database: {DB_PATH}")
-    print(f"  UI:       src/ui/index.html")
+    print(f"  UI:       src/UI/exovision.html")
     print(f"\n  Apri il browser su: http://localhost:5000\n")
 
     app.run(debug=True, port=5000)

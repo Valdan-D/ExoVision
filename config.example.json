@@ -1,0 +1,24 @@
+{
+  "archivio": {
+    "percorso": "",
+    "db": "exovision.db"
+  },
+  "ocr": {
+    "lingue": ["it", "en"],
+    "confidenza_minima": 0.4
+  },
+  "yolo": {
+    "modello": "yolov8n.pt",
+    "confidenza_minima": 0.4
+  },
+  "video": {
+    "frame_interval_secondi": 5
+  },
+  "ricerca": {
+    "soglia_similarita": 0.75,
+    "modalita": "locale"
+  },
+  "ui": {
+    "tema_scuro": false
+  }
+}

@@ -7,6 +7,7 @@ Nota: alla prima esecuzione scarica i modelli (~500MB), poi lavora offline.
 
 import sqlite3
 import sys
+import json
 from pathlib import Path
 from datetime import datetime
 
@@ -23,14 +24,17 @@ except ImportError:
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
 
-# Lingue da rilevare — aggiungine altre se servono
-# Lista completa: https://www.jaided.ai/easyocr/
-LINGUE = ["it", "en"]
+_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
 
-# Soglia minima di confidenza per salvare il testo (0.0 - 1.0)
-CONFIDENZA_MINIMA = 0.4
+def _load_config():
+    with open(_CONFIG_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
-# Estensioni immagine supportate
+_cfg = _load_config()
+
+LINGUE            = _cfg["ocr"]["lingue"]
+CONFIDENZA_MINIMA = _cfg["ocr"]["confidenza_minima"]
+
 FOTO_EXT = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".bmp"}
 
 
@@ -125,11 +129,13 @@ def estrai_testo(reader: easyocr.Reader, path: str):
 
 # ─── Scan cartella ────────────────────────────────────────────────────────────
 
-def processa_cartella(cartella: str, db_path: str = "exovision.db"):
+def processa_cartella(cartella: str, db_path: str = None):
     """
     Scansiona una cartella, estrae testo OCR da ogni immagine
     e lo inserisce in SQLite.
     """
+    if db_path is None:
+        db_path = _cfg["archivio"]["db"]
     conn = sqlite3.connect(db_path)
     init_tabella_ocr(conn)
 
