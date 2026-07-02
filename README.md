@@ -14,6 +14,7 @@ ExoVision permette di cercare immagini e video usando il linguaggio naturale, se
 - **Object detection** — riconosce oggetti nelle immagini (YOLOv8n)
 - **Estrazione keyframe** — i video vengono analizzati con scene detection ffmpeg, non a intervallo fisso, per catturare solo i cambi di scena significativi
 - **Trascrizione audio** — l'audio dei video viene convertito in testo con faster-whisper per arricchire la ricerca
+- **Import da browser** — trascina foto/video nella tab Importa: vengono caricati, salvati e indicizzati subito (step metadati; OCR/YOLO/frame/trascrizione restano script da lanciare a parte)
 - **Interfaccia web locale** — si apre nel browser, zero installazioni aggiuntive
 - **Gestione metadati** — visualizzazione e segnalazione di file con metadati incompleti
 - **Configurabile** — tutti i parametri modificabili dall'interfaccia (`config.json`, creato in automatico al primo avvio)

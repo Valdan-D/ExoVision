@@ -9,9 +9,14 @@ import sqlite3
 import os
 import json
 from pathlib import Path
+from uuid import uuid4
 from flask import Flask, jsonify, request, send_from_directory, abort
+from werkzeug.utils import secure_filename
+
+import exovision_metadata as metadata_pipeline
 
 app = Flask(__name__, static_folder="UI", static_url_path="")
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB per richiesta di import
 
 # ── Configurazione ────────────────────────────────────────────────────────────
 
@@ -438,6 +443,73 @@ def thumb(file_id):
         conn.close()
 
 
+# ── API — Importazione ────────────────────────────────────────────────────────
+
+def _cartella_archivio() -> Path:
+    """
+    Cartella dove vengono salvati i file caricati dalla tab Importa.
+    Usa archivio.percorso da config.json se impostato, altrimenti
+    una cartella di default alla root del progetto.
+    """
+    percorso = load_config()["archivio"].get("percorso") or ""
+    return Path(percorso) if percorso else Path(__file__).parent.parent / "archivio_importati"
+
+
+@app.route("/api/import", methods=["POST"])
+def import_files():
+    """
+    Riceve i file caricati dalla tab Importa (multipart/form-data, campo "files"),
+    li salva su disco e li indicizza subito con la stessa logica di
+    exovision_metadata.py (metadati EXIF/ffprobe → SQLite).
+    OCR/YOLO/frame/trascrizione restano step separati, da lanciare a parte.
+    """
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, description="Nessun file ricevuto.")
+
+    cartella = _cartella_archivio()
+    cartella.mkdir(parents=True, exist_ok=True)
+
+    estensioni_valide = metadata_pipeline.FOTO_EXT | metadata_pipeline.VIDEO_EXT
+
+    conn = get_db()
+    indicizzati, saltati, errori = 0, 0, 0
+
+    try:
+        for f in files:
+            nome = secure_filename(f.filename or "")
+            ext  = Path(nome).suffix.lower()
+
+            if not nome or ext not in estensioni_valide:
+                saltati += 1
+                continue
+
+            dest = cartella / nome
+            if dest.exists():
+                dest = cartella / f"{dest.stem}_{uuid4().hex[:8]}{dest.suffix}"
+            f.save(dest)
+
+            tipo    = "foto" if ext in metadata_pipeline.FOTO_EXT else "video"
+            file_id = metadata_pipeline.inserisci_file(conn, str(dest), tipo)
+
+            if not file_id:
+                errori += 1
+                continue
+
+            if tipo == "foto":
+                meta = metadata_pipeline.estrai_metadati_foto(str(dest))
+                metadata_pipeline.inserisci_metadati_foto(conn, file_id, meta)
+            else:
+                meta = metadata_pipeline.estrai_metadati_video(str(dest))
+                metadata_pipeline.inserisci_metadati_video(conn, file_id, meta)
+
+            indicizzati += 1
+    finally:
+        conn.close()
+
+    return jsonify({"indicizzati": indicizzati, "saltati": saltati, "errori": errori})
+
+
 # ── API — Configurazione ─────────────────────────────────────────────────────
 
 @app.route("/api/config", methods=["GET"])
@@ -476,6 +548,11 @@ def save_config():
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({"errore": str(e)}), 404
+
+
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"errore": "File troppo grandi (limite 2 GB per richiesta di import)."}), 413
 
 
 # ── Avvio ─────────────────────────────────────────────────────────────────────
