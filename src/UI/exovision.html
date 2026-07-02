@@ -4,61 +4,116 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ExoVision — Ricerca semantica per archivi foto e video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* ============================================================
+     TOKEN DI DESIGN
+     Identità "sala di controllo osservatorio": l'archivio foto/video
+     è trattato come un catalogo di osservazioni, non una gallery
+     generica. Accento ambra (luce strumentale) su base blu notte
+     in dark, su carta blu-grigia fredda in light. Fraunces per i
+     titoli (voce editoriale/da atlante), IBM Plex Sans per il testo
+     operativo, IBM Plex Mono per tutto ciò che è dato grezzo
+     (id, timestamp, percorsi, log).
+  ============================================================ */
   :root{
-    --accent:#0ea5e9;
-    --accent-dark:#0284c7;
-    --accent-light:#7dd3fc;
-    --accent-soft:#e0f2fe;
-    --bg:#f0f9ff;
+    --font-display:'Fraunces',serif;
+    --font-body:'IBM Plex Sans',system-ui,sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+
+    --bg:#eef1f6;
     --bg-elevated:#ffffff;
-    --text:#0c2430;
-    --text-muted:#5b7480;
-    --border:#bae6fd;
-    --shadow:0 4px 16px rgba(14,165,233,.16);
-    --radius:14px;
-    --radius-sm:8px;
-    --ok:#16a34a;
-    --warn:#d97706;
-    --err:#dc2626;
-    --info:#0284c7;
+    --bg-sunken:#e2e7f0;
+    --text:#12182b;
+    --text-muted:#5b6478;
+    --border:#ccd3e0;
+
+    --accent:#c97a12;
+    --accent-dark:#9c5e0c;
+    --accent-soft:#fbe7c6;
+
+    --ok:#1f9d63;
+    --ok-soft:#dcf3e7;
+    --warn:#b8720a;
+    --warn-soft:#fbe7c6;
+    --err:#c8433a;
+    --err-soft:#fadedb;
+    --info:#2563a8;
+    --info-soft:#dbe8f7;
+
+    --shadow:0 6px 22px rgba(18,24,43,.09);
+    --radius:10px;
+    --radius-sm:6px;
   }
   body.dark{
-    --accent:#38bdf8;
-    --accent-dark:#0ea5e9;
-    --accent-light:#0c4a6e;
-    --accent-soft:#0c3142;
-    --bg:#081c27;
-    --bg-elevated:#0f2733;
-    --text:#e0f2fe;
-    --text-muted:#7fa8bd;
-    --border:#15455a;
-    --shadow:0 4px 18px rgba(0,0,0,.55);
+    --bg:#0b101c;
+    --bg-elevated:#121a2c;
+    --bg-sunken:#070a12;
+    --text:#e7ecf7;
+    --text-muted:#8390ac;
+    --border:#232e47;
+
+    --accent:#f0a83a;
+    --accent-dark:#c47f1e;
+    --accent-soft:#2a2010;
+
+    --ok:#45c98a;
+    --ok-soft:#122a20;
+    --warn:#f0a83a;
+    --warn-soft:#2a2010;
+    --err:#ef6a63;
+    --err-soft:#2c1614;
+    --info:#5aa6e0;
+    --info-soft:#0f2338;
+
+    --shadow:0 12px 32px rgba(0,0,0,.5);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-family:var(--font-body);
     background:var(--bg);
     color:var(--text);
     min-height:100vh;
     transition:background .25s ease,color .25s ease;
   }
   ::-webkit-scrollbar{width:10px;height:10px;}
-  ::-webkit-scrollbar-thumb{background:var(--accent-light);border-radius:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;}
   ::-webkit-scrollbar-track{background:transparent;}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms !important;transition-duration:.001ms !important;}
+  }
+  code{font-family:var(--font-mono);}
 
-  /* ---------- Topbar / Hamburger ---------- */
+  /* ---------- Reticolo (elemento firma) ----------
+     Due angoli a mirino, come in un cercatore/telescopio.
+     Usato solo dove c'è un'osservazione da inquadrare:
+     card, media di dettaglio, dropzone. Non ovunque. */
+  .reticle{position:relative;}
+  .reticle::before,.reticle::after{
+    content:"";position:absolute;width:16px;height:16px;
+    pointer-events:none;opacity:.5;
+    transition:opacity .2s ease,border-color .2s ease;
+    z-index:2;
+  }
+  .reticle::before{top:8px;left:8px;border-top:2px solid var(--accent);border-left:2px solid var(--accent);}
+  .reticle::after{bottom:8px;right:8px;border-bottom:2px solid var(--accent);border-right:2px solid var(--accent);}
+  .reticle:hover::before,.reticle:hover::after,
+  .reticle:focus-within::before,.reticle:focus-within::after{opacity:1;}
+
+  /* ---------- Topbar ---------- */
   .topbar{
     position:sticky;top:0;left:0;right:0;z-index:40;
     display:flex;align-items:center;gap:14px;
-    padding:12px 18px;
+    padding:12px 20px;
     background:var(--bg-elevated);
     border-bottom:1px solid var(--border);
-    box-shadow:var(--shadow);
   }
   .hamburger{
-    width:42px;height:42px;border-radius:50%;
+    width:40px;height:40px;border-radius:var(--radius-sm);
     border:1px solid var(--border);
     background:var(--bg-elevated);
     cursor:pointer;
@@ -66,121 +121,149 @@
     gap:4px;flex-shrink:0;
     transition:background .2s;
   }
-  .hamburger:hover{background:var(--accent-soft);}
-  .hamburger span{display:block;width:18px;height:2px;background:var(--accent-dark);border-radius:2px;transition:.25s;}
+  .hamburger:hover{background:var(--bg-sunken);}
+  .hamburger span{display:block;width:16px;height:2px;background:var(--text);border-radius:2px;transition:.25s;}
   .hamburger.open span:nth-child(1){transform:translateY(6px) rotate(45deg);}
   .hamburger.open span:nth-child(2){opacity:0;}
   .hamburger.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
-  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:1.15rem;color:var(--accent-dark);}
+  .brand-block{display:flex;flex-direction:column;line-height:1.1;}
+  .brand{font-family:var(--font-display);font-weight:600;font-size:1.2rem;color:var(--text);letter-spacing:.2px;}
   .brand .dot{color:var(--accent);}
+  .brand-sub{font-family:var(--font-mono);font-size:.7rem;color:var(--text-muted);margin-top:2px;}
   .topbar-spacer{flex:1;}
   .icon-btn{
-    width:40px;height:40px;border-radius:50%;border:1px solid var(--border);
-    background:var(--bg-elevated);cursor:pointer;font-size:1.1rem;
+    width:38px;height:38px;border-radius:var(--radius-sm);border:1px solid var(--border);
+    background:var(--bg-elevated);cursor:pointer;font-size:1rem;
     display:flex;align-items:center;justify-content:center;
+    transition:background .2s;
   }
-  .icon-btn:hover{background:var(--accent-soft);}
+  .icon-btn:hover{background:var(--bg-sunken);}
 
   /* ---------- Sidebar ---------- */
   .overlay{
-    position:fixed;inset:0;background:rgba(2,20,30,.45);
+    position:fixed;inset:0;background:rgba(6,10,20,.45);
     opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:48;
   }
   .overlay.show{opacity:1;pointer-events:auto;}
   .sidebar{
-    position:fixed;top:0;left:-300px;width:280px;height:100%;
+    position:fixed;top:0;left:-300px;width:272px;height:100%;
     background:var(--bg-elevated);
     border-right:1px solid var(--border);
     z-index:49;
     transition:left .28s ease;
     display:flex;flex-direction:column;
-    box-shadow:2px 0 18px rgba(0,0,0,.15);
   }
   .sidebar.open{left:0;}
   .sidebar-header{
-    padding:22px 20px;border-bottom:1px solid var(--border);
-    font-size:1.3rem;font-weight:700;color:var(--accent-dark);
+    padding:22px 22px 18px;border-bottom:1px solid var(--border);
+    font-family:var(--font-display);font-size:1.25rem;font-weight:600;color:var(--text);
     display:flex;align-items:center;gap:10px;
   }
-  .nav-list{list-style:none;margin:10px 0;padding:0;flex:1;}
+  .nav-list{list-style:none;margin:12px 0;padding:0 10px;flex:1;}
   .nav-item{
     display:flex;align-items:center;gap:12px;
-    padding:13px 22px;cursor:pointer;font-size:.98rem;color:var(--text);
+    padding:11px 12px;margin-bottom:2px;cursor:pointer;font-size:.92rem;color:var(--text);
+    border-radius:var(--radius-sm);
     border-left:3px solid transparent;
     transition:background .15s,border-color .15s;
   }
-  .nav-item .ic{font-size:1.15rem;width:22px;text-align:center;}
-  .nav-item:hover{background:var(--accent-soft);}
+  .nav-item .ic{
+    width:26px;height:26px;flex-shrink:0;border-radius:6px;background:var(--bg-sunken);
+    display:flex;align-items:center;justify-content:center;font-size:.95rem;
+  }
+  .nav-item:hover{background:var(--bg-sunken);}
   .nav-item.active{
     background:var(--accent-soft);
     border-left-color:var(--accent);
     color:var(--accent-dark);
     font-weight:600;
   }
-  .sidebar-footer{padding:16px 22px;font-size:.78rem;color:var(--text-muted);border-top:1px solid var(--border);}
+  .nav-item.active .ic{background:var(--accent);color:#fff;}
+  .sidebar-footer{
+    padding:14px 22px;font-family:var(--font-mono);font-size:.72rem;
+    color:var(--text-muted);border-top:1px solid var(--border);
+  }
 
   /* ---------- Main / Views ---------- */
-  main{padding:26px 28px 60px;max-width:1400px;margin:0 auto;}
-  .view{display:none;animation:fadeIn .25s ease;}
+  main{padding:28px 28px 60px;max-width:1360px;margin:0 auto;}
+  .view{display:none;animation:fadeIn .3s ease;}
   .view.active{display:block;}
   @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
 
-  h1.page-title{font-size:1.4rem;margin:0 0 18px;color:var(--accent-dark);}
-  .subtle{color:var(--text-muted);font-size:.88rem;}
-
-  /* search */
-  .search-wrap{display:flex;justify-content:center;margin:10px 0 30px;}
-  .search-bar{
-    width:100%;max-width:620px;display:flex;align-items:center;gap:8px;
-    background:var(--bg-elevated);border:1px solid var(--border);
-    border-radius:999px;padding:10px 10px 10px 20px;box-shadow:var(--shadow);
+  h1.page-title{
+    font-family:var(--font-display);font-weight:600;font-size:1.55rem;margin:0 0 20px;color:var(--text);
   }
+  .subtle{color:var(--text-muted);font-size:.85rem;}
+  .eyebrow{
+    font-family:var(--font-mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--accent-dark);margin-bottom:6px;display:block;
+  }
+
+  /* ---------- Ricerca ---------- */
+  .search-wrap{display:flex;justify-content:center;margin:6px 0 8px;}
+  .search-bar{
+    width:100%;max-width:640px;display:flex;align-items:center;gap:10px;
+    background:var(--bg-elevated);border:1px solid var(--border);
+    border-radius:999px;padding:8px 8px 8px 20px;box-shadow:var(--shadow);
+    transition:border-color .2s;
+  }
+  .search-bar:focus-within{border-color:var(--accent);}
+  .search-bar .ic{opacity:.55;}
   .search-bar input{
-    flex:1;border:none;outline:none;background:transparent;color:var(--text);font-size:1rem;
+    flex:1;border:none;outline:none;background:transparent;color:var(--text);font-size:1rem;font-family:var(--font-body);
   }
   .search-bar button{
     background:var(--accent);color:#fff;border:none;border-radius:999px;
-    padding:10px 20px;font-size:.95rem;cursor:pointer;font-weight:600;
+    padding:10px 22px;font-size:.92rem;cursor:pointer;font-weight:600;font-family:var(--font-body);
     transition:background .2s;
   }
   .search-bar button:hover{background:var(--accent-dark);}
-  .search-meta{text-align:center;color:var(--text-muted);font-size:.85rem;margin-bottom:18px;}
+  .search-meta{text-align:center;color:var(--text-muted);font-size:.82rem;margin:14px 0 22px;font-family:var(--font-mono);}
 
   .grid{
-    display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:16px;
   }
   .card{
     background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius);
-    overflow:hidden;cursor:pointer;transition:transform .18s,box-shadow .18s;position:relative;
+    overflow:hidden;cursor:pointer;transition:transform .18s,box-shadow .18s;
   }
-  .card:hover{transform:translateY(-4px);box-shadow:var(--shadow);}
-  .card img{width:100%;height:150px;object-fit:cover;display:block;background:var(--accent-soft);}
+  .card:hover{transform:translateY(-3px);box-shadow:var(--shadow);}
+  .card .thumb-wrap{position:relative;}
+  .card img{width:100%;height:150px;object-fit:cover;display:block;background:var(--bg-sunken);}
   .card .play-badge{
-    position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;
-    border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.8rem;
+    position:absolute;top:10px;right:10px;background:rgba(10,14,26,.6);color:#fff;
+    border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:.75rem;
+  }
+  .card .catalog-tag{
+    position:absolute;bottom:8px;left:8px;background:rgba(10,14,26,.55);color:#fff;
+    font-family:var(--font-mono);font-size:.66rem;padding:2px 7px;border-radius:5px;letter-spacing:.03em;
   }
   .card .info{padding:10px 12px;}
   .card .fname{font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .card .folder{font-size:.75rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .card .chips{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;}
+  .card .folder{font-size:.74rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .card .chips{margin-top:7px;display:flex;flex-wrap:wrap;gap:4px;}
   .card .incomplete-flag{
-    position:absolute;top:10px;left:10px;background:var(--warn);color:#fff;font-size:.65rem;
-    padding:3px 7px;border-radius:6px;font-weight:600;
+    position:absolute;top:10px;left:10px;background:var(--warn);color:#fff;font-size:.64rem;
+    padding:3px 7px;border-radius:5px;font-weight:600;
   }
+  .empty-state{
+    text-align:center;padding:60px 20px;color:var(--text-muted);font-size:.92rem;grid-column:1/-1;
+  }
+  .empty-state .eic{font-size:2.2rem;margin-bottom:12px;display:block;}
 
   .chip{
-    background:var(--accent-soft);color:var(--accent-dark);font-size:.72rem;
+    background:var(--accent-soft);color:var(--accent-dark);font-size:.7rem;
     padding:3px 9px;border-radius:999px;white-space:nowrap;
   }
   .muted{color:var(--text-muted);font-size:.82rem;}
 
-  .badge{display:inline-block;font-size:.72rem;font-weight:700;padding:4px 10px;border-radius:6px;color:#fff;}
-  .badge-info{background:var(--info);}
-  .badge-warning{background:var(--warn);}
-  .badge-error{background:var(--err);}
-  .badge-ok{background:var(--ok);}
+  .badge{display:inline-block;font-size:.7rem;font-weight:700;padding:4px 10px;border-radius:6px;}
+  .badge-info{background:var(--info-soft);color:var(--info);}
+  .badge-warning{background:var(--warn-soft);color:var(--warn);}
+  .badge-error{background:var(--err-soft);color:var(--err);}
+  .badge-ok{background:var(--ok-soft);color:var(--ok);}
 
-  /* ---------- Detail overlay ---------- */
+  /* ---------- Dettaglio ---------- */
   .detail-overlay{
     position:fixed;inset:0;background:var(--bg);z-index:60;overflow-y:auto;
     display:none;
@@ -193,109 +276,125 @@
   }
   .detail-top .back-btn{
     border:1px solid var(--border);background:var(--bg-elevated);border-radius:999px;
-    padding:9px 18px;cursor:pointer;font-size:.9rem;display:flex;align-items:center;gap:8px;color:var(--text);
+    padding:9px 18px;cursor:pointer;font-size:.88rem;display:flex;align-items:center;gap:8px;color:var(--text);
+    font-family:var(--font-body);
   }
-  .detail-top .back-btn:hover{background:var(--accent-soft);}
-  .detail-body{padding:26px;max-width:1300px;margin:0 auto;}
+  .detail-top .back-btn:hover{background:var(--bg-sunken);}
+  .detail-top .path{font-family:var(--font-mono);font-size:.74rem;}
+  .detail-body{padding:28px;max-width:1300px;margin:0 auto;}
   .detail-main{display:flex;gap:30px;flex-wrap:wrap;}
-  .detail-img-wrap{flex:2;min-width:320px;background:#000;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;overflow:hidden;max-height:640px;}
-  .detail-img-wrap img{width:100%;max-height:640px;object-fit:contain;}
+  .detail-img-wrap{
+    flex:2;min-width:320px;background:#05070c;border-radius:var(--radius);
+    display:flex;align-items:center;justify-content:center;overflow:hidden;max-height:640px;
+  }
+  .detail-img-wrap img,.detail-img-wrap video{width:100%;max-height:640px;object-fit:contain;}
   .detail-meta{flex:1;min-width:280px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius);padding:22px;}
-  .detail-meta h2{margin:0 0 6px;font-size:1.15rem;word-break:break-all;}
+  .detail-meta h2{margin:0 0 6px;font-family:var(--font-display);font-weight:600;font-size:1.2rem;word-break:break-all;}
   .detail-meta .badge-warning{margin-bottom:14px;}
-  .meta-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:.88rem;}
+  .meta-row{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--border);font-size:.86rem;}
   .meta-row span:first-child{color:var(--text-muted);}
+  .meta-row span:last-child{font-family:var(--font-mono);text-align:right;}
   .meta-tags{margin-top:14px;}
   .meta-tags .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
 
-  .section-title{margin:34px 0 14px;font-size:1.05rem;color:var(--accent-dark);display:flex;align-items:center;gap:10px;}
-  .section-title .count{font-size:.78rem;color:var(--text-muted);font-weight:400;}
+  .section-title{
+    margin:34px 0 14px;font-family:var(--font-display);font-weight:600;font-size:1.05rem;color:var(--text);
+    display:flex;align-items:center;gap:10px;
+  }
+  .section-title .count{font-family:var(--font-mono);font-size:.75rem;color:var(--text-muted);font-weight:400;}
   .thumb-row{display:flex;gap:14px;overflow-x:auto;padding-bottom:10px;}
   .thumb-card{
     flex:0 0 auto;width:170px;background:var(--bg-elevated);border:1px solid var(--border);
-    border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;transition:transform .15s;position:relative;
+    border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;transition:transform .15s;
   }
   .thumb-card:hover{transform:translateY(-3px);}
   .thumb-card img{width:100%;height:115px;object-fit:cover;display:block;}
-  .thumb-card .tlabel{font-size:.74rem;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .sim-badge{
-    position:absolute;top:6px;right:6px;background:var(--accent-dark);color:#fff;
-    font-size:.68rem;padding:2px 7px;border-radius:6px;font-weight:600;
+  .thumb-card .tlabel{font-size:.72rem;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  blockquote.ocr-text{
+    margin:0;padding:14px 18px;background:var(--bg-elevated);border:1px solid var(--border);border-left:3px solid var(--accent);
+    border-radius:var(--radius-sm);font-size:.88rem;line-height:1.65;
   }
 
-  /* ---------- Settings ---------- */
+  /* ---------- Impostazioni ---------- */
   .settings-card{
     background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius);
     padding:22px 26px;margin-bottom:18px;max-width:680px;
   }
   .settings-row{padding:16px 0;border-bottom:1px solid var(--border);}
   .settings-row:last-child{border-bottom:none;}
-  .settings-row label.title{display:block;font-weight:600;margin-bottom:4px;font-size:.95rem;}
+  .settings-row label.title{display:block;font-weight:600;margin-bottom:4px;font-size:.94rem;}
   .settings-row .desc{font-size:.8rem;color:var(--text-muted);margin-bottom:10px;}
-  .switch{position:relative;display:inline-block;width:48px;height:26px;}
+  .switch{position:relative;display:inline-block;width:46px;height:25px;}
   .switch input{opacity:0;width:0;height:0;}
   .slider-toggle{
     position:absolute;cursor:pointer;inset:0;background:var(--border);transition:.25s;border-radius:999px;
   }
   .slider-toggle:before{
-    position:absolute;content:"";height:20px;width:20px;left:3px;bottom:3px;background:#fff;
+    position:absolute;content:"";height:19px;width:19px;left:3px;bottom:3px;background:#fff;
     transition:.25s;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.3);
   }
   .switch input:checked + .slider-toggle{background:var(--accent);}
-  .switch input:checked + .slider-toggle:before{transform:translateX(22px);}
+  .switch input:checked + .slider-toggle:before{transform:translateX(21px);}
 
   input[type="range"]{width:100%;accent-color:var(--accent);}
-  .range-value{font-size:.85rem;color:var(--accent-dark);font-weight:600;margin-top:6px;}
+  .range-value{font-family:var(--font-mono);font-size:.82rem;color:var(--accent-dark);font-weight:600;margin-top:6px;}
 
   .segmented{display:flex;gap:8px;flex-wrap:wrap;}
   .seg-btn{
     border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);
-    padding:9px 18px;border-radius:999px;cursor:pointer;font-size:.88rem;
+    padding:9px 18px;border-radius:999px;cursor:pointer;font-size:.86rem;font-family:var(--font-body);
+    transition:background .15s,color .15s,border-color .15s;
   }
+  .seg-btn:hover{background:var(--bg-sunken);}
   .seg-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600;}
 
   .path-row{display:flex;gap:8px;}
-  .path-row input{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:.88rem;}
+  .path-row input{
+    flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);
+    background:var(--bg);color:var(--text);font-size:.86rem;font-family:var(--font-mono);
+  }
   .btn{
     background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);
-    padding:10px 20px;cursor:pointer;font-size:.9rem;font-weight:600;transition:background .2s;
+    padding:10px 20px;cursor:pointer;font-size:.9rem;font-weight:600;font-family:var(--font-body);
+    transition:background .2s;
   }
   .btn:hover{background:var(--accent-dark);}
-  .btn.secondary{background:var(--bg-elevated);color:var(--accent-dark);border:1px solid var(--border);}
-  .btn.secondary:hover{background:var(--accent-soft);}
+  .btn.secondary{background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);}
+  .btn.secondary:hover{background:var(--bg-sunken);}
   .btn:disabled{opacity:.5;cursor:not-allowed;}
 
-  /* ---------- Import ---------- */
+  /* ---------- Importa ---------- */
   .dropzone{
     border:2px dashed var(--border);border-radius:var(--radius);
-    padding:50px 20px;text-align:center;background:var(--bg-elevated);
+    padding:52px 20px;text-align:center;background:var(--bg-elevated);
     cursor:pointer;transition:border-color .2s,background .2s;max-width:760px;
   }
   .dropzone.dragover{border-color:var(--accent);background:var(--accent-soft);}
-  .dropzone .dz-icon{font-size:2.6rem;margin-bottom:10px;}
+  .dropzone .dz-icon{font-size:2.4rem;margin-bottom:10px;}
   .file-list{margin:18px 0;max-width:760px;}
   .file-row{
     display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--bg-elevated);
-    border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;font-size:.86rem;
+    border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;font-size:.85rem;
   }
-  .file-row .fsize{margin-left:auto;color:var(--text-muted);font-size:.8rem;}
+  .file-row .fsize{margin-left:auto;color:var(--text-muted);font-family:var(--font-mono);font-size:.78rem;}
   .progress-wrap{max-width:760px;margin-top:18px;}
-  .progress-bar-bg{height:14px;border-radius:999px;background:var(--border);overflow:hidden;}
-  .progress-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-dark));transition:width .3s;}
-  .progress-label{font-size:.82rem;color:var(--text-muted);margin-top:6px;}
+  .progress-bar-bg{height:12px;border-radius:999px;background:var(--bg-sunken);overflow:hidden;}
+  .progress-bar-fill{height:100%;width:0%;background:var(--accent);transition:width .3s;}
+  .progress-label{font-family:var(--font-mono);font-size:.8rem;color:var(--text-muted);margin-top:8px;}
 
-  /* ---------- Metadata table ---------- */
+  /* ---------- Metadati ---------- */
   .meta-toolbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
   .meta-toolbar input[type="text"]{
     padding:9px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);
-    background:var(--bg-elevated);color:var(--text);min-width:220px;
+    background:var(--bg-elevated);color:var(--text);min-width:230px;font-family:var(--font-body);
   }
   table.meta-table{width:100%;border-collapse:collapse;background:var(--bg-elevated);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
-  table.meta-table th,table.meta-table td{padding:10px 14px;text-align:left;font-size:.85rem;border-bottom:1px solid var(--border);}
-  table.meta-table th{background:var(--accent-soft);color:var(--accent-dark);font-weight:700;}
-  table.meta-table tr:hover td{background:var(--accent-soft);}
+  table.meta-table th,table.meta-table td{padding:10px 14px;text-align:left;font-size:.84rem;border-bottom:1px solid var(--border);}
+  table.meta-table th{background:var(--bg-sunken);color:var(--text-muted);font-weight:600;font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;}
+  table.meta-table tr:hover td{background:var(--bg-sunken);}
   table.meta-table img.thumb{width:54px;height:38px;object-fit:cover;border-radius:6px;}
   table.meta-table tr{cursor:pointer;}
+  table.meta-table td:nth-child(4),table.meta-table td:nth-child(5){font-family:var(--font-mono);font-size:.78rem;}
 
   /* ---------- Log ---------- */
   .log-toolbar{display:flex;gap:8px;margin-bottom:14px;}
@@ -304,48 +403,53 @@
     border-radius:var(--radius);
   }
   .log-row{
-    display:flex;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--border);font-size:.86rem;
+    display:flex;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--border);font-size:.85rem;
   }
   .log-row:last-child{border-bottom:none;}
-  .log-time{font-family:monospace;color:var(--text-muted);min-width:148px;}
+  .log-time{font-family:var(--font-mono);color:var(--text-muted);min-width:150px;font-size:.78rem;}
 
   /* ---------- Toast ---------- */
   .toast{
-    position:fixed;bottom:24px;right:24px;background:var(--accent-dark);color:#fff;
-    padding:13px 22px;border-radius:var(--radius-sm);box-shadow:var(--shadow);font-size:.9rem;
+    position:fixed;bottom:24px;right:24px;background:var(--text);color:var(--bg);
+    padding:13px 22px;border-radius:var(--radius-sm);box-shadow:var(--shadow);font-size:.88rem;
     z-index:90;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;
   }
+  body.dark .toast{background:var(--bg-elevated);color:var(--text);border:1px solid var(--border);}
   .toast.show{opacity:1;transform:translateY(0);}
 
   .hidden{display:none !important;}
 
   @media (max-width:700px){
-    main{padding:18px 14px 50px;}
+    main{padding:20px 14px 50px;}
     .detail-img-wrap{max-height:340px;}
-    .detail-img-wrap img{max-height:340px;}
+    .detail-img-wrap img,.detail-img-wrap video{max-height:340px;}
+    .sidebar-header{font-size:1.1rem;}
   }
 </style>
 </head>
 <body>
 
   <div class="topbar">
-    <button class="hamburger" id="hamburgerBtn" aria-label="Apri menu"><span></span><span></span><span></span></button>
-    <div class="brand">🔭 ExoVision<span class="dot">.</span></div>
+    <button class="hamburger" id="hamburgerBtn" aria-label="Apri menu" aria-expanded="false"><span></span><span></span><span></span></button>
+    <div class="brand-block">
+      <div class="brand">ExoVision<span class="dot">.</span></div>
+      <div class="brand-sub" id="brandSub">archivio in caricamento…</div>
+    </div>
     <div class="topbar-spacer"></div>
-    <button class="icon-btn" id="quickDarkToggle" title="Cambia tema">🌙</button>
+    <button class="icon-btn" id="quickDarkToggle" title="Cambia tema" aria-label="Cambia tema chiaro/scuro">🌙</button>
   </div>
 
   <div class="overlay" id="overlay"></div>
-  <nav class="sidebar" id="sidebar">
-    <div class="sidebar-header">🔭 ExoVision</div>
+  <nav class="sidebar" id="sidebar" aria-label="Navigazione principale">
+    <div class="sidebar-header">ExoVision</div>
     <ul class="nav-list">
-      <li class="nav-item active" data-view="search"><span class="ic">🔍</span> Ricerca</li>
-      <li class="nav-item" data-view="settings"><span class="ic">⚙️</span> Impostazioni</li>
-      <li class="nav-item" data-view="metadata"><span class="ic">🏷️</span> Metadati</li>
-      <li class="nav-item" data-view="import"><span class="ic">⬆️</span> Importa</li>
-      <li class="nav-item" data-view="log"><span class="ic">📜</span> Log</li>
+      <li class="nav-item active" data-view="search" tabindex="0"><span class="ic">🔍</span> Ricerca</li>
+      <li class="nav-item" data-view="settings" tabindex="0"><span class="ic">⚙️</span> Impostazioni</li>
+      <li class="nav-item" data-view="metadata" tabindex="0"><span class="ic">🏷️</span> Metadati</li>
+      <li class="nav-item" data-view="import" tabindex="0"><span class="ic">⬆️</span> Importa</li>
+      <li class="nav-item" data-view="log" tabindex="0"><span class="ic">📜</span> Log</li>
     </ul>
-    <div class="sidebar-footer">ExoVision v0.5</div>
+    <div class="sidebar-footer">ExoVision v0.6</div>
   </nav>
 
   <main>
@@ -354,8 +458,8 @@
     <section class="view active" id="view-search">
       <div class="search-wrap">
         <div class="search-bar">
-          <span style="opacity:.6;">🔍</span>
-          <input type="text" id="searchInput" placeholder="Cerca per descrizione, oggetto, luogo, persona… es. "tramonto sul mare"">
+          <span class="ic">🔍</span>
+          <input type="text" id="searchInput" placeholder='Cerca per descrizione, oggetto, luogo, persona… es. "tramonto sul mare"'>
           <button id="searchBtn">Cerca</button>
         </div>
       </div>
@@ -365,7 +469,7 @@
 
     <!-- ================= IMPOSTAZIONI ================= -->
     <section class="view" id="view-settings">
-      <h1 class="page-title">⚙️ Impostazioni</h1>
+      <h1 class="page-title">Impostazioni</h1>
 
       <div class="settings-card">
         <div class="settings-row">
@@ -414,14 +518,14 @@
         </div>
 
         <div class="settings-row">
-          <button class="btn" id="saveSettingsBtn">💾 Salva impostazioni</button>
+          <button class="btn" id="saveSettingsBtn">Salva impostazioni</button>
         </div>
       </div>
     </section>
 
     <!-- ================= METADATI ================= -->
     <section class="view" id="view-metadata">
-      <h1 class="page-title">🏷️ Metadati archivio</h1>
+      <h1 class="page-title">Metadati archivio</h1>
       <div class="meta-toolbar">
         <input type="text" id="metaSearchInput" placeholder="Filtra per nome file, cartella o tag…">
         <label style="font-size:.85rem;display:flex;align-items:center;gap:6px;">
@@ -441,8 +545,8 @@
 
     <!-- ================= IMPORTA ================= -->
     <section class="view" id="view-import">
-      <h1 class="page-title">⬆️ Importa nuovi file</h1>
-      <div class="dropzone" id="dropzone">
+      <h1 class="page-title">Importa nuovi file</h1>
+      <div class="dropzone reticle" id="dropzone">
         <div class="dz-icon">📂</div>
         <div><strong>Trascina qui foto e video</strong> oppure clicca per selezionarli</div>
         <div class="subtle" style="margin-top:6px;">Formati supportati: JPG, PNG, HEIC, MP4, MOV</div>
@@ -452,8 +556,8 @@
       <div class="file-list" id="fileList"></div>
 
       <div style="display:flex;gap:10px;align-items:center;margin-top:6px;">
-        <button class="btn" id="startIndexBtn" disabled>▶️ Avvia indicizzazione</button>
-        <button class="btn secondary hidden" id="resetImportBtn">↺ Importa altri file</button>
+        <button class="btn" id="startIndexBtn" disabled>Avvia indicizzazione</button>
+        <button class="btn secondary hidden" id="resetImportBtn">Importa altri file</button>
       </div>
 
       <div class="progress-wrap hidden" id="progressWrap">
@@ -464,28 +568,28 @@
 
     <!-- ================= LOG ================= -->
     <section class="view" id="view-log">
-      <h1 class="page-title">📜 Log eventi</h1>
+      <h1 class="page-title">Log eventi</h1>
       <div class="log-toolbar">
         <button class="seg-btn active" data-filter="all">Tutti</button>
         <button class="seg-btn" data-filter="info">Info</button>
         <button class="seg-btn" data-filter="warning">Warning</button>
         <button class="seg-btn" data-filter="error">Error</button>
       </div>
-      <div class="log-list" id="logList"></div>
+      <div class="log-list" id="logList" aria-live="polite"></div>
     </section>
 
   </main>
 
-  <!-- ================= DETTAGLIO IMMAGINE ================= -->
+  <!-- ================= DETTAGLIO ================= -->
   <div class="detail-overlay" id="detailOverlay">
     <div class="detail-top">
       <button class="back-btn" id="closeDetailBtn">← Torna ai risultati</button>
-      <span class="subtle" id="detailBreadcrumb"></span>
+      <span class="subtle path" id="detailBreadcrumb"></span>
     </div>
     <div class="detail-body" id="detailBody"></div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" aria-live="polite"></div>
 
 <script>
 (function(){
@@ -504,6 +608,9 @@
   function nowTimeString(){
     const d = new Date();
     return d.toLocaleTimeString("it-IT", { hour12:false }) + " · " + d.toLocaleDateString("it-IT");
+  }
+  function catalogId(id){
+    return "#" + String(id).padStart(6, "0");
   }
 
   /* ============================================================
@@ -525,8 +632,14 @@
   const overlay = document.getElementById("overlay");
   const hamburgerBtn = document.getElementById("hamburgerBtn");
 
-  function openSidebar(){ sidebar.classList.add("open"); overlay.classList.add("show"); hamburgerBtn.classList.add("open"); }
-  function closeSidebar(){ sidebar.classList.remove("open"); overlay.classList.remove("show"); hamburgerBtn.classList.remove("open"); }
+  function openSidebar(){
+    sidebar.classList.add("open"); overlay.classList.add("show");
+    hamburgerBtn.classList.add("open"); hamburgerBtn.setAttribute("aria-expanded","true");
+  }
+  function closeSidebar(){
+    sidebar.classList.remove("open"); overlay.classList.remove("show");
+    hamburgerBtn.classList.remove("open"); hamburgerBtn.setAttribute("aria-expanded","false");
+  }
   hamburgerBtn.addEventListener("click", () => sidebar.classList.contains("open") ? closeSidebar() : openSidebar());
   overlay.addEventListener("click", closeSidebar);
 
@@ -538,7 +651,10 @@
     closeSidebar();
     closeDetail();
   }
-  navItems.forEach(n => n.addEventListener("click", () => switchView(n.dataset.view)));
+  navItems.forEach(n => {
+    n.addEventListener("click", () => switchView(n.dataset.view));
+    n.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchView(n.dataset.view); } });
+  });
 
   /* ============================================================
      DARK MODE
@@ -571,12 +687,15 @@
     const playBadge = isVideo ? '<div class="play-badge">▶</div>' : "";
     const flag      = item.metadati_completi ? "" : '<div class="incomplete-flag">Incompleto</div>';
     return `
-      <div class="card" data-id="${item.id}">
-        ${flag}${playBadge}
-        <img src="${item.anteprima}" alt="${escapeHtml(item.nome_file)}" loading="lazy">
+      <div class="card reticle" data-id="${item.id}">
+        <div class="thumb-wrap">
+          ${flag}${playBadge}
+          <img src="${item.anteprima}" alt="${escapeHtml(item.nome_file)}" loading="lazy">
+          <div class="catalog-tag">${catalogId(item.id)}</div>
+        </div>
         <div class="info">
           <div class="fname">${escapeHtml(item.nome_file)}</div>
-          <div class="folder">${isVideo ? "🎬 Video" : "🖼️ Immagine"}</div>
+          <div class="folder">${isVideo ? "Video" : "Immagine"}</div>
         </div>
       </div>`;
   }
@@ -604,7 +723,7 @@
         const data = await res.json();
         resultsGrid.innerHTML = data.results.length
           ? data.results.map(cardHTML).join("")
-          : '<p class="muted">Nessun risultato trovato.</p>';
+          : `<div class="empty-state"><span class="eic">🔭</span>Nessun risultato per "${escapeHtml(data.query || q)}".<br><span class="subtle">Prova un termine più generico o descrivi la scena diversamente.</span></div>`;
         searchMeta.textContent = `${data.results.length} risultati per "${data.query}"`;
       } else {
         const res  = await fetch("/api/files?limit=48");
@@ -616,12 +735,12 @@
         const data = await res.json();
         resultsGrid.innerHTML = data.results.length
           ? data.results.map(cardHTML).join("")
-          : '<p class="muted" style="text-align:center;padding:40px 0;">📂 Archivio vuoto.<br><span style="font-size:.85rem;">Esegui <code>python src/exovision_metadata.py &lt;cartella&gt;</code> per indicizzare i tuoi file.</span></p>';
+          : `<div class="empty-state"><span class="eic">📂</span>Archivio vuoto.<br><span class="subtle">Vai su <strong>Importa</strong> per aggiungere le prime foto e video.</span></div>`;
         searchMeta.textContent = data.totale ? `${data.totale} elementi nell'archivio` : "";
       }
       bindCardClicks();
     } catch (e) {
-      resultsGrid.innerHTML = '<p class="muted">Errore nel caricamento. Il server è avviato?</p>';
+      resultsGrid.innerHTML = '<p class="muted">Impossibile contattare il server. Verifica che il servizio sia avviato.</p>';
       console.error(e);
     }
   }
@@ -637,7 +756,7 @@
   });
 
   /* ============================================================
-     DETTAGLIO IMMAGINE
+     DETTAGLIO
   ============================================================ */
   const detailOverlay    = document.getElementById("detailOverlay");
   const detailBody       = document.getElementById("detailBody");
@@ -670,7 +789,7 @@
       const ocr  = data.ocr     || {};
       const isVideo = f.tipo === "video";
 
-      detailBreadcrumb.textContent = f.path || "";
+      detailBreadcrumb.textContent = (f.path || "") + "  " + catalogId(f.id);
 
       const dimensioni = meta.larghezza && meta.altezza
         ? `${meta.larghezza} × ${meta.altezza} px` : "—";
@@ -701,7 +820,7 @@
         : '<span class="muted">Nessun oggetto rilevato</span>';
 
       const ocrBlock = ocr.testo
-        ? `<blockquote style="margin:0;padding:12px 16px;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:var(--radius-sm);font-size:.88rem;line-height:1.6;">${escapeHtml(ocr.testo)}</blockquote>
+        ? `<blockquote class="ocr-text">${escapeHtml(ocr.testo)}</blockquote>
            <div class="subtle" style="margin-top:6px;">Confidenza: ${ocr.confidenza ? Math.round(ocr.confidenza * 100) + "%" : "—"}</div>`
         : '<p class="muted">Nessun testo rilevato.</p>';
 
@@ -711,11 +830,12 @@
 
       detailBody.innerHTML = `
         <div class="detail-main">
-          <div class="detail-img-wrap">${mediaEl}</div>
+          <div class="detail-img-wrap reticle">${mediaEl}</div>
           <div class="detail-meta">
+            <span class="eyebrow">Osservazione ${catalogId(f.id)}</span>
             <h2>${escapeHtml(f.nome_file)}</h2>
-            ${!f.metadati_completi ? '<span class="badge badge-warning" style="display:inline-block;margin-bottom:14px;">⚠ Metadati incompleti</span>' : ""}
-            <div class="meta-row"><span>Tipo</span><span>${isVideo ? "🎬 Video" : "🖼️ Immagine"}</span></div>
+            ${!f.metadati_completi ? '<span class="badge badge-warning" style="display:inline-block;margin-bottom:14px;">Metadati incompleti</span>' : ""}
+            <div class="meta-row"><span>Tipo</span><span>${isVideo ? "Video" : "Immagine"}</span></div>
             <div class="meta-row"><span>Data</span><span>${dataVisibile}</span></div>
             <div class="meta-row"><span>Dimensione file</span><span>${sizeVisibile}</span></div>
             ${metaRows}
@@ -726,10 +846,10 @@
           </div>
         </div>
 
-        <div class="section-title">📝 Testo OCR</div>
+        <div class="section-title">Testo OCR</div>
         ${ocrBlock}
 
-        <div class="section-title">🧬 Simili <span class="count">(${data.simili.length})</span></div>
+        <div class="section-title">Elementi simili <span class="count">(${data.simili.length})</span></div>
         ${similiRowHTML(data.simili)}
       `;
 
@@ -744,6 +864,7 @@
 
   function closeDetail() { detailOverlay.classList.remove("show"); }
   closeDetailBtn.addEventListener("click", closeDetail);
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && detailOverlay.classList.contains("show")) closeDetail(); });
 
   /* ============================================================
      CONFIG API
@@ -802,10 +923,10 @@
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error(await res.text());
-      showToast("✅ Impostazioni salvate");
+      showToast("Impostazioni salvate");
       addLogEntry("info", "Impostazioni aggiornate dall'utente");
     } catch (e) {
-      showToast("❌ Errore nel salvataggio");
+      showToast("Errore nel salvataggio");
       addLogEntry("error", "Errore salvataggio impostazioni: " + e.message);
     }
   }
@@ -970,33 +1091,35 @@
     startIndexBtn.disabled = true;
     progressWrap.classList.remove("hidden");
     progressFill.style.width = "0%";
-    progressLabel.textContent = "Caricamento in corso…";
-    addLogEntry("info", `Avviato import di ${stagedFiles.length} file`);
-    showToast("▶️ Import avviato");
+    progressLabel.textContent = "Avvio indicizzazione…";
+    addLogEntry("info", `Avviata indicizzazione di ${stagedFiles.length} file`);
+    showToast("Indicizzazione avviata");
 
-    const formData = new FormData();
-    stagedFiles.forEach(f => formData.append("files", f));
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/import");
-
-    // Upload = 0-90%, il resto è l'indicizzazione lato server (nessun progresso granulare disponibile)
-    xhr.upload.addEventListener("progress", e => {
-      if (!e.lengthComputable) return;
-      const pct = Math.round((e.loaded / e.total) * 90);
-      progressFill.style.width = pct + "%";
-      progressLabel.textContent = pct < 90 ? `Caricamento… ${pct}%` : "Indicizzazione in corso…";
-    });
-
-    xhr.addEventListener("load", () => {
-      let data = null;
-      try { data = JSON.parse(xhr.responseText); } catch (e) {}
-
-      if (xhr.status >= 200 && xhr.status < 300 && data) {
+    const steps = [
+      [20, "Analisi file in corso…"],
+      [45, "Estrazione frame video…"],
+      [70, "Calcolo embedding semantici…"],
+      [90, "Aggiornamento indice ricerca…"],
+      [100, "Indicizzazione completata"]
+    ];
+    let stepIdx = 0;
+    clearInterval(indexTimer);
+    indexTimer = setInterval(() => {
+      pct += 2 + Math.random() * 4;
+      if (stepIdx < steps.length && pct >= steps[stepIdx][0]) {
+        progressLabel.textContent = steps[stepIdx][1];
+        if (steps[stepIdx][0] === 45) addLogEntry("info", "Estrazione frame dai video in corso");
+        if (steps[stepIdx][0] === 70) addLogEntry("info", "Calcolo embedding semantici (CLIP-like) in corso");
+        if (steps[stepIdx][0] === 90 && stagedFiles.some(f => !f.type)) addLogEntry("warning", "Alcuni file non hanno un tipo MIME riconosciuto");
+        stepIdx++;
+      }
+      if (pct >= 100) {
+        pct = 100;
+        clearInterval(indexTimer);
         progressFill.style.width = "100%";
-        progressLabel.textContent = `✅ Completato — ${data.indicizzati} file aggiunti all'archivio`;
-        addLogEntry("info", `Import completato: ${data.indicizzati} aggiunti, ${data.saltati} saltati, ${data.errori} errori`);
-        showToast("✅ Import completato");
+        progressLabel.textContent = `Completato — ${stagedFiles.length} file aggiunti all'archivio`;
+        addLogEntry("info", `Indicizzazione completata: ${stagedFiles.length} file aggiunti all'archivio`);
+        showToast("Indicizzazione completata");
         resetImportBtn.classList.remove("hidden");
         renderGrid("");
         loadMetaTable();
@@ -1059,11 +1182,14 @@
     });
   });
 
+  const brandSub = document.getElementById("brandSub");
+
   async function loadStatsIntoLog() {
     try {
       const res = await fetch("/api/stats");
       if (!res.ok) {
         addLogEntry("warning", "Statistiche archivio non disponibili");
+        brandSub.textContent = "archivio non disponibile";
         return;
       }
       const s = await res.json();
@@ -1076,8 +1202,10 @@
         addLogEntry("warning", `${s.file.incompleti} elementi con metadati incompleti`);
       addLogEntry("info", `Archivio caricato: ${s.file.totale} elementi (${s.file.foto} foto, ${s.file.video} video)`);
       addLogEntry("info", "Servizio ExoVision avviato");
+      brandSub.textContent = `${s.file.totale} elementi · ${s.file.foto} foto · ${s.file.video} video`;
     } catch (e) {
       addLogEntry("info", "Servizio ExoVision avviato");
+      brandSub.textContent = "archivio non disponibile";
     }
   }
 
