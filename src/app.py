@@ -41,9 +41,99 @@ DB_PATH = os.environ.get("EXOVISION_DB", load_config()["archivio"]["db"])
 def db_ready():
     return Path(DB_PATH).exists()
 
+def _ensure_schema(conn: sqlite3.Connection):
+    """
+    Crea le tabelle mancanti se non tutti gli script della pipeline sono stati
+    ancora eseguiti (es. solo exovision_metadata.py, senza OCR/YOLO/frame/whisper).
+    Evita 500 "no such table" nelle API quando l'archivio è processato a metà.
+    """
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS files (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            path                TEXT UNIQUE NOT NULL,
+            nome_file           TEXT,
+            tipo                TEXT CHECK(tipo IN ('foto', 'video')),
+            estensione          TEXT,
+            dimensione_bytes    INTEGER,
+            data_modifica       TEXT,
+            data_indicizzazione TEXT,
+            metadati_completi   INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS metadati_foto (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id     INTEGER NOT NULL REFERENCES files(id),
+            larghezza   INTEGER,
+            altezza     INTEGER,
+            modalita    TEXT,
+            data_scatto TEXT,
+            camera_make TEXT,
+            camera_model TEXT,
+            iso         INTEGER,
+            apertura    TEXT,
+            otturatore  TEXT,
+            lunghezza_focale TEXT,
+            gps_lat     REAL,
+            gps_lon     REAL,
+            extra_exif  TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS metadati_video (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id         INTEGER NOT NULL REFERENCES files(id),
+            durata_secondi  REAL,
+            larghezza       INTEGER,
+            altezza         INTEGER,
+            framerate       REAL,
+            codec_video     TEXT,
+            codec_audio     TEXT,
+            bitrate         INTEGER,
+            extra           TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS ocr (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id          INTEGER NOT NULL REFERENCES files(id),
+            testo            TEXT,
+            lingua           TEXT,
+            confidenza       REAL,
+            data_estrazione  TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS oggetti (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id          INTEGER NOT NULL REFERENCES files(id),
+            oggetto          TEXT,
+            confidenza       REAL,
+            bbox_x1          REAL,
+            bbox_y1          REAL,
+            bbox_x2          REAL,
+            bbox_y2          REAL,
+            data_estrazione  TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS frame (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id         INTEGER NOT NULL REFERENCES files(id),
+            timestamp_sec   REAL,
+            path_frame      TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS trascrizioni (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id          INTEGER NOT NULL REFERENCES files(id),
+            testo            TEXT,
+            lingua           TEXT,
+            confidenza       REAL,
+            data_estrazione  TEXT
+        );
+    """)
+    conn.commit()
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    _ensure_schema(conn)
     return conn
 
 
