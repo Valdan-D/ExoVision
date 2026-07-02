@@ -11,7 +11,10 @@ exovision.db
 ├── files               → anagrafica di ogni file multimediale
 ├── metadati_foto       → dati EXIF estratti dalle foto
 ├── metadati_video      → dati tecnici estratti dai video
-└── frame               → frame estratti dai video ogni N secondi
+├── ocr                 → testo estratto dalle immagini (EasyOCR)
+├── oggetti             → oggetti rilevati nelle immagini (YOLOv8n)
+├── frame               → keyframe estratti dai video (scene detection ffmpeg)
+└── trascrizioni        → trascrizione audio dei video (faster-whisper)
 ```
 
 ---
@@ -83,18 +86,69 @@ Contiene i dati tecnici estratti dai video tramite FFprobe. Collegata a `files` 
 
 ---
 
+## Tabella `ocr`
+
+Testo estratto dalle immagini con EasyOCR. Collegata a `files` tramite `file_id`.
+
+| Colonna | Tipo | Descrizione |
+|---|---|---|
+| `id` | INTEGER PK | Identificativo univoco |
+| `file_id` | INTEGER FK | Riferimento a `files.id` |
+| `testo` | TEXT | Testo estratto (NULL se nessun testo trovato o sotto la soglia di confidenza) |
+| `lingua` | TEXT | Lingue usate per il riconoscimento (es. `it+en`) |
+| `confidenza` | REAL | Confidenza media (0–1) dei blocchi di testo accettati |
+| `data_estrazione` | TEXT | Data di esecuzione dell'OCR (ISO 8601) |
+
+> Viene sempre inserita una riga per ogni immagine processata (anche con `testo` NULL), così il file non viene ririprocessato ad ogni esecuzione.
+
+---
+
+## Tabella `oggetti`
+
+Oggetti rilevati nelle immagini con YOLOv8n. Collegata a `files` tramite `file_id`.
+
+| Colonna | Tipo | Descrizione |
+|---|---|---|
+| `id` | INTEGER PK | Identificativo univoco |
+| `file_id` | INTEGER FK | Riferimento a `files.id` |
+| `oggetto` | TEXT | Nome della classe rilevata (NULL se nessun oggetto rilevato) |
+| `confidenza` | REAL | Confidenza della rilevazione (0–1) |
+| `bbox_x1`, `bbox_y1`, `bbox_x2`, `bbox_y2` | REAL | Bounding box dell'oggetto in pixel |
+| `data_estrazione` | TEXT | Data di esecuzione della rilevazione (ISO 8601) |
+
+> Come per `ocr`, se non viene rilevato nulla si inserisce comunque una riga con `oggetto` NULL per marcare il file come processato.
+
+---
+
 ## Tabella `frame`
 
-Registra i frame estratti dai video ogni N secondi. Ogni frame è trattato come un'immagine indipendente ai fini dell'embedding visivo.
+Registra i keyframe estratti dai video tramite scene detection ffmpeg (frame salvati solo in corrispondenza di un cambio di scena, non a intervallo fisso). Ogni frame è trattato come un'immagine indipendente ai fini dell'embedding visivo.
 
 | Colonna | Tipo | Descrizione |
 |---|---|---|
 | `id` | INTEGER PK | Identificativo univoco |
 | `file_id` | INTEGER FK | Riferimento al video in `files.id` |
 | `timestamp_sec` | REAL | Posizione temporale del frame nel video (secondi) |
-| `path_frame` | TEXT | Percorso del file immagine estratto su disco |
+| `path_frame` | TEXT | Percorso del file immagine estratto su disco (`frame/fr-<file_id>-<n>-<nomevideo>.jpg`) |
 
-> Gli embedding di ogni frame vengono salvati in ChromaDB, usando `frame.id` come chiave di collegamento.
+> Gli embedding di ogni frame verranno salvati in ChromaDB, usando `frame.id` come chiave di collegamento. Se l'estrazione fallisce o non rileva cambi di scena, viene comunque inserita una riga segnaposto (`timestamp_sec`/`path_frame` NULL) per non ritentare il video ad ogni esecuzione.
+
+---
+
+## Tabella `trascrizioni`
+
+Trascrizione dell'audio dei video con faster-whisper. Collegata a `files` tramite `file_id`.
+
+| Colonna | Tipo | Descrizione |
+|---|---|---|
+| `id` | INTEGER PK | Identificativo univoco |
+| `file_id` | INTEGER FK | Riferimento al video in `files.id` |
+| `testo` | TEXT | Trascrizione (NULL se nessun parlato rilevato o errore) |
+| `lingua` | TEXT | Lingua rilevata automaticamente da whisper (o forzata da config) |
+| `confidenza` | REAL | Confidenza media (0–1), derivata da `exp(avg_logprob)` dei segmenti |
+| `data_estrazione` | TEXT | Data di esecuzione della trascrizione (ISO 8601) |
+
+> Stessa logica di segnaposto delle altre tabelle: una riga viene sempre inserita, anche a vuoto, per evitare ritentativi infiniti.
 
 ---
 
@@ -103,7 +157,10 @@ Registra i frame estratti dai video ogni N secondi. Ogni frame è trattato come 
 ```
 files (1) ──────────────── (1) metadati_foto
 files (1) ──────────────── (1) metadati_video
+files (1) ──────────────── (N) ocr
+files (1) ──────────────── (N) oggetti
 files (1) ──────────────── (N) frame
+files (1) ──────────────── (N) trascrizioni
 ```
 
 ---
@@ -140,4 +197,14 @@ SELECT f.nome_file, fr.timestamp_sec, fr.path_frame
 FROM files f JOIN frame fr ON f.id = fr.file_id
 WHERE f.nome_file = 'video.mp4'
 ORDER BY fr.timestamp_sec;
+
+-- Immagini con testo OCR rilevato
+SELECT f.nome_file, o.testo, o.confidenza
+FROM files f JOIN ocr o ON f.id = o.file_id
+WHERE o.testo IS NOT NULL;
+
+-- Video con trascrizione audio disponibile
+SELECT f.nome_file, t.lingua, t.testo
+FROM files f JOIN trascrizioni t ON f.id = t.file_id
+WHERE t.testo IS NOT NULL;
 ```

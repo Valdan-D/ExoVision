@@ -6,4 +6,6 @@ data/
 *.DS_Store
 config.json
 *.pt
+frame/
 CLAUDE.md
+.claude/

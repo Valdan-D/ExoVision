@@ -12,7 +12,14 @@
     "confidenza_minima": 0.4
   },
   "video": {
-    "frame_interval_secondi": 5
+    "frame_interval_secondi": 5,
+    "soglia_scena": 0.4,
+    "cartella_frame": "frame"
+  },
+  "whisper": {
+    "modello": "small",
+    "lingua": null,
+    "confidenza_minima": 0.4
   },
   "ricerca": {
     "soglia_similarita": 0.75,

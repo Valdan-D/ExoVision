@@ -42,6 +42,13 @@ def check_python():
 
 # ─── Controllo FFmpeg ─────────────────────────────────────────────────────────
 
+COMANDI_INSTALL_FFMPEG = {
+    "Windows": ["winget", "install", "--id", "Gyan.FFmpeg", "-e"],
+    "Darwin":  ["brew", "install", "ffmpeg"],
+    "Linux":   ["sudo", "apt-get", "install", "-y", "ffmpeg"],
+}
+
+
 def check_ffmpeg():
     titolo("FFmpeg")
     if shutil.which("ffmpeg"):
@@ -56,18 +63,32 @@ def check_ffmpeg():
         except Exception:
             ok("FFmpeg trovato")
             return True
-    else:
-        errore("FFmpeg non trovato")
-        sistema = platform.system()
-        if sistema == "Windows":
-            print(f"     Scarica da:  https://github.com/BtbN/FFmpeg-Builds/releases")
-            print(f"     Estrai e aggiungi la cartella 'bin' al PATH di sistema.")
-            print(f"     Guida:       https://www.wikihow.com/Install-FFmpeg-on-Windows")
-        elif sistema == "Darwin":
-            print(f"     Installa con: brew install ffmpeg")
+
+    errore("FFmpeg non trovato")
+    sistema = platform.system()
+    comando = COMANDI_INSTALL_FFMPEG.get(sistema)
+
+    if comando:
+        avviso(f"Provo a installarlo con: {' '.join(comando)}")
+        try:
+            subprocess.run(comando, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            errore(f"Installazione automatica fallita ({e})")
         else:
-            print(f"     Installa con: sudo apt install ffmpeg")
-        return False
+            if shutil.which("ffmpeg"):
+                ok("FFmpeg installato correttamente")
+                return True
+            avviso("Comando eseguito ma FFmpeg non risulta ancora nel PATH — potrebbe servire riaprire il terminale.")
+
+    if sistema == "Windows":
+        print(f"     Scarica da:  https://github.com/BtbN/FFmpeg-Builds/releases")
+        print(f"     Estrai e aggiungi la cartella 'bin' al PATH di sistema.")
+        print(f"     Guida:       https://www.wikihow.com/Install-FFmpeg-on-Windows")
+    elif sistema == "Darwin":
+        print(f"     Installa con: brew install ffmpeg")
+    else:
+        print(f"     Installa con: sudo apt install ffmpeg")
+    return False
 
 
 # ─── Installazione pip ────────────────────────────────────────────────────────
@@ -122,12 +143,14 @@ def verifica_import():
     titolo("Verifica import")
 
     moduli = [
-        ("PIL",        "Pillow"),
-        ("piexif",     "piexif"),
-        ("ffmpeg",     "ffmpeg-python"),
-        ("easyocr",    "easyocr"),
-        ("chromadb",   "chromadb"),
-        ("flask",      "flask"),
+        ("PIL",            "Pillow"),
+        ("piexif",         "piexif"),
+        ("ffmpeg",         "ffmpeg-python"),
+        ("easyocr",        "easyocr"),
+        ("chromadb",       "chromadb"),
+        ("flask",          "flask"),
+        ("ultralytics",    "ultralytics"),
+        ("faster_whisper", "faster-whisper"),
     ]
 
     tutti_ok = True

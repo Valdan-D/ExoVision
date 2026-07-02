@@ -15,9 +15,21 @@ app = Flask(__name__, static_folder="UI", static_url_path="")
 
 # ── Configurazione ────────────────────────────────────────────────────────────
 
-CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+CONFIG_PATH         = Path(__file__).parent.parent / "config.json"
+CONFIG_EXAMPLE_PATH = Path(__file__).parent.parent / "config.example.json"
 
 def load_config():
+    """
+    Legge config.json. Se manca (primo avvio, mai creato a mano), lo genera
+    copiando config.example.json invece di andare in crash.
+    """
+    if not CONFIG_PATH.exists():
+        with open(CONFIG_EXAMPLE_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return cfg
+
     with open(CONFIG_PATH, encoding="utf-8") as f:
         return json.load(f)
 

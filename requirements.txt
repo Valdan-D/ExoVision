@@ -19,3 +19,6 @@ flask
 
 #Riconoscimento oggetti
 ultralytics
+
+# Trascrizione audio video
+faster-whisper
