@@ -7,5 +7,6 @@ data/
 config.json
 *.pt
 frame/
+archivio_importati/
 CLAUDE.md
 .claude/

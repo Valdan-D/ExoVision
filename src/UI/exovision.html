@@ -1086,12 +1086,10 @@
     if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
   });
 
-  let indexTimer = null;
   startIndexBtn.addEventListener("click", () => {
     if (!stagedFiles.length) return;
     startIndexBtn.disabled = true;
     progressWrap.classList.remove("hidden");
-    let pct = 0;
     progressFill.style.width = "0%";
     progressLabel.textContent = "Avvio indicizzazione…";
     addLogEntry("info", `Avviata indicizzazione di ${stagedFiles.length} file`);
@@ -1123,10 +1121,25 @@
         addLogEntry("info", `Indicizzazione completata: ${stagedFiles.length} file aggiunti all'archivio`);
         showToast("Indicizzazione completata");
         resetImportBtn.classList.remove("hidden");
-        return;
+        renderGrid("");
+        loadMetaTable();
+      } else {
+        const msg = (data && data.errore) || "Errore durante l'import.";
+        progressLabel.textContent = "❌ " + msg;
+        addLogEntry("error", `Import fallito: ${msg}`);
+        showToast("❌ Import fallito");
+        startIndexBtn.disabled = false;
       }
-      progressFill.style.width = pct + "%";
-    }, 260);
+    });
+
+    xhr.addEventListener("error", () => {
+      progressLabel.textContent = "❌ Errore di rete durante l'import.";
+      addLogEntry("error", "Import fallito: errore di rete");
+      showToast("❌ Import fallito");
+      startIndexBtn.disabled = false;
+    });
+
+    xhr.send(formData);
   });
 
   resetImportBtn.addEventListener("click", () => {
