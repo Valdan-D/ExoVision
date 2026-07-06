@@ -72,12 +72,16 @@
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
+  :root{ --grid-dot:rgba(18,24,43,.055); }
+  body.dark{ --grid-dot:rgba(240,168,58,.06); }
   body{
     font-family:var(--font-body);
-    background:var(--bg);
+    background:
+      radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0) 0 0/28px 28px,
+      var(--bg);
     color:var(--text);
     min-height:100vh;
-    transition:background .25s ease,color .25s ease;
+    transition:background-color .25s ease,color .25s ease;
   }
   ::-webkit-scrollbar{width:10px;height:10px;}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;}
@@ -127,16 +131,19 @@
   .hamburger.open span:nth-child(2){opacity:0;}
   .hamburger.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
   .brand-block{display:flex;flex-direction:column;line-height:1.1;}
-  .brand{font-family:var(--font-display);font-weight:600;font-size:1.2rem;color:var(--text);letter-spacing:.2px;}
+  .brand{font-family:var(--font-display);font-variation-settings:'opsz' 30;font-weight:600;font-size:1.2rem;color:var(--text);letter-spacing:.2px;display:flex;align-items:center;gap:8px;}
+  .brand .mark{width:16px;height:16px;flex-shrink:0;color:var(--accent);animation:markPulse 3.4s ease-in-out infinite;}
+  @keyframes markPulse{0%,100%{opacity:.55;transform:scale(.92);}50%{opacity:1;transform:scale(1);}}
   .brand .dot{color:var(--accent);}
   .brand-sub{font-family:var(--font-mono);font-size:.7rem;color:var(--text-muted);margin-top:2px;}
   .topbar-spacer{flex:1;}
   .icon-btn{
     width:38px;height:38px;border-radius:var(--radius-sm);border:1px solid var(--border);
-    background:var(--bg-elevated);cursor:pointer;font-size:1rem;
+    background:var(--bg-elevated);cursor:pointer;color:var(--text);
     display:flex;align-items:center;justify-content:center;
     transition:background .2s;
   }
+  .icon-btn .icon{width:17px;height:17px;}
   .icon-btn:hover{background:var(--bg-sunken);}
 
   /* ---------- Sidebar ---------- */
@@ -168,9 +175,11 @@
     transition:background .15s,border-color .15s;
   }
   .nav-item .ic{
-    width:26px;height:26px;flex-shrink:0;border-radius:6px;background:var(--bg-sunken);
-    display:flex;align-items:center;justify-content:center;font-size:.95rem;
+    width:26px;height:26px;flex-shrink:0;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--text-muted);transition:color .15s;
   }
+  .nav-item .ic .icon{width:16px;height:16px;}
   .nav-item:hover{background:var(--bg-sunken);}
   .nav-item.active{
     background:var(--accent-soft);
@@ -178,11 +187,14 @@
     color:var(--accent-dark);
     font-weight:600;
   }
-  .nav-item.active .ic{background:var(--accent);color:#fff;}
+  .nav-item.active .ic{color:var(--accent-dark);}
+  body.dark .nav-item.active .ic{color:var(--accent);}
   .sidebar-footer{
     padding:14px 22px;font-family:var(--font-mono);font-size:.72rem;
     color:var(--text-muted);border-top:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;
   }
+  .sidebar-footer .status-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft);}
 
   /* ---------- Main / Views ---------- */
   main{padding:28px 28px 60px;max-width:1360px;margin:0 auto;}
@@ -191,7 +203,7 @@
   @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
 
   h1.page-title{
-    font-family:var(--font-display);font-weight:600;font-size:1.55rem;margin:0 0 20px;color:var(--text);
+    font-family:var(--font-display);font-variation-settings:'opsz' 60;font-weight:600;font-size:1.65rem;margin:0 0 20px;color:var(--text);letter-spacing:-.01em;
   }
   .subtle{color:var(--text-muted);font-size:.85rem;}
   .eyebrow{
@@ -199,15 +211,64 @@
     color:var(--accent-dark);margin-bottom:6px;display:block;
   }
 
+  /* ---------- Icone SVG ---------- */
+  .icon{width:1em;height:1em;display:inline-block;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;}
+  .icon.filled{fill:currentColor;stroke:none;}
+
+  /* ---------- Readout strip (hero della vista Ricerca) ---------- */
+  .readout-strip{
+    display:flex;justify-content:center;gap:0;flex-wrap:wrap;
+    max-width:640px;margin:0 auto 26px;
+    background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden;
+  }
+  .readout-cell{
+    flex:1;min-width:110px;padding:14px 10px 12px;text-align:center;
+    border-right:1px solid var(--border);position:relative;
+  }
+  .readout-cell:last-child{border-right:none;}
+  .readout-cell .rv{
+    font-family:var(--font-display);font-variation-settings:'opsz' 70;font-weight:600;
+    font-size:1.5rem;color:var(--text);line-height:1;display:block;
+    font-variant-numeric:tabular-nums;
+  }
+  .readout-cell.accent .rv{color:var(--accent-dark);}
+  body.dark .readout-cell.accent .rv{color:var(--accent);}
+  .readout-cell .rl{
+    font-family:var(--font-mono);font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--text-muted);margin-top:4px;display:block;
+  }
+
+  /* ---------- Skeleton loaders ---------- */
+  @keyframes shimmer{0%{background-position:-300px 0;}100%{background-position:300px 0;}}
+  .skel{
+    background:linear-gradient(90deg,var(--bg-sunken) 25%,var(--border) 37%,var(--bg-sunken) 63%);
+    background-size:600px 100%;animation:shimmer 1.4s linear infinite;
+  }
+  .skel-card{border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);background:var(--bg-elevated);}
+  .skel-card .skel{height:150px;display:block;}
+  .skel-card .skel-lines{padding:10px 12px;}
+  .skel-card .skel-lines .skel{height:10px;border-radius:4px;margin-bottom:6px;width:80%;}
+  .skel-card .skel-lines .skel:last-child{width:45%;margin-bottom:0;}
+  .skel-row td{padding:12px 14px;}
+  .skel-row .skel{height:12px;border-radius:4px;}
+
   /* ---------- Ricerca ---------- */
-  .search-wrap{display:flex;justify-content:center;margin:6px 0 8px;}
+  .search-wrap{display:flex;justify-content:center;margin:6px 0 8px;position:relative;}
   .search-bar{
     width:100%;max-width:640px;display:flex;align-items:center;gap:10px;
     background:var(--bg-elevated);border:1px solid var(--border);
     border-radius:999px;padding:8px 8px 8px 20px;box-shadow:var(--shadow);
-    transition:border-color .2s;
+    transition:border-color .2s;position:relative;overflow:hidden;
   }
   .search-bar:focus-within{border-color:var(--accent);}
+  .search-bar::after{
+    content:"";position:absolute;left:-30%;top:0;bottom:0;width:30%;
+    background:linear-gradient(90deg,transparent,var(--accent-soft) 45%,transparent);
+    opacity:0;pointer-events:none;
+  }
+  .search-bar.scanning::after{opacity:1;animation:scanSweep 1.1s ease-in-out infinite;}
+  @keyframes scanSweep{0%{left:-30%;}100%{left:100%;}}
   .search-bar .ic{opacity:.55;}
   .search-bar input{
     flex:1;border:none;outline:none;background:transparent;color:var(--text);font-size:1rem;font-family:var(--font-body);
@@ -225,9 +286,15 @@
   }
   .card{
     background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius);
-    overflow:hidden;cursor:pointer;transition:transform .18s,box-shadow .18s;
+    overflow:hidden;cursor:pointer;transition:transform .18s,box-shadow .18s,border-color .18s;
+    animation:cardIn .38s ease backwards;animation-delay:calc(var(--i,0) * 35ms);
   }
-  .card:hover{transform:translateY(-3px);box-shadow:var(--shadow);}
+  @keyframes cardIn{from{opacity:0;transform:translateY(10px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
+  .card:hover{
+    transform:translateY(-4px);
+    border-color:var(--accent);
+    box-shadow:var(--shadow), 0 0 0 1px var(--accent-soft);
+  }
   .card .thumb-wrap{position:relative;}
   .card img{width:100%;height:150px;object-fit:cover;display:block;background:var(--bg-sunken);}
   .card .play-badge{
@@ -247,9 +314,15 @@
     padding:3px 7px;border-radius:5px;font-weight:600;
   }
   .empty-state{
-    text-align:center;padding:60px 20px;color:var(--text-muted);font-size:.92rem;grid-column:1/-1;
+    text-align:center;padding:60px 20px 66px;color:var(--text-muted);font-size:.92rem;grid-column:1/-1;
   }
-  .empty-state .eic{font-size:2.2rem;margin-bottom:12px;display:block;}
+  .empty-state .eic{
+    width:52px;height:52px;margin:0 auto 16px;color:var(--accent);opacity:.75;
+    display:flex;align-items:center;justify-content:center;
+    border:1.5px dashed var(--border);border-radius:50%;
+  }
+  .empty-state .eic .icon{width:24px;height:24px;}
+  .empty-state strong{color:var(--text);}
 
   .chip{
     background:var(--accent-soft);color:var(--accent-dark);font-size:.7rem;
@@ -370,7 +443,8 @@
     cursor:pointer;transition:border-color .2s,background .2s;max-width:760px;
   }
   .dropzone.dragover{border-color:var(--accent);background:var(--accent-soft);}
-  .dropzone .dz-icon{font-size:2.4rem;margin-bottom:10px;}
+  .dropzone .dz-icon{width:44px;height:44px;margin:0 auto 14px;color:var(--accent);}
+  .dropzone .dz-icon .icon{width:100%;height:100%;stroke-width:1.3;}
   .file-list{margin:18px 0;max-width:760px;}
   .file-row{
     display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--bg-elevated);
@@ -432,33 +506,46 @@
   <div class="topbar">
     <button class="hamburger" id="hamburgerBtn" aria-label="Apri menu" aria-expanded="false"><span></span><span></span><span></span></button>
     <div class="brand-block">
-      <div class="brand">ExoVision<span class="dot">.</span></div>
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="8" cy="8" r="1.4" fill="currentColor"/>
+          <path d="M8 0.6V3M8 13V15.4M0.6 8H3M13 8H15.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+        ExoVision
+      </div>
       <div class="brand-sub" id="brandSub">archivio in caricamento…</div>
     </div>
     <div class="topbar-spacer"></div>
-    <button class="icon-btn" id="quickDarkToggle" title="Cambia tema" aria-label="Cambia tema chiaro/scuro">🌙</button>
+    <button class="icon-btn" id="quickDarkToggle" title="Cambia tema" aria-label="Cambia tema chiaro/scuro"></button>
   </div>
 
   <div class="overlay" id="overlay"></div>
   <nav class="sidebar" id="sidebar" aria-label="Navigazione principale">
     <div class="sidebar-header">ExoVision</div>
     <ul class="nav-list">
-      <li class="nav-item active" data-view="search" tabindex="0"><span class="ic">🔍</span> Ricerca</li>
-      <li class="nav-item" data-view="settings" tabindex="0"><span class="ic">⚙️</span> Impostazioni</li>
-      <li class="nav-item" data-view="metadata" tabindex="0"><span class="ic">🏷️</span> Metadati</li>
-      <li class="nav-item" data-view="import" tabindex="0"><span class="ic">⬆️</span> Importa</li>
-      <li class="nav-item" data-view="log" tabindex="0"><span class="ic">📜</span> Log</li>
+      <li class="nav-item active" data-view="search" tabindex="0"><span class="ic" data-icon="search"></span> Ricerca</li>
+      <li class="nav-item" data-view="settings" tabindex="0"><span class="ic" data-icon="settings"></span> Impostazioni</li>
+      <li class="nav-item" data-view="metadata" tabindex="0"><span class="ic" data-icon="tag"></span> Metadati</li>
+      <li class="nav-item" data-view="import" tabindex="0"><span class="ic" data-icon="upload"></span> Importa</li>
+      <li class="nav-item" data-view="log" tabindex="0"><span class="ic" data-icon="log"></span> Log</li>
     </ul>
-    <div class="sidebar-footer">ExoVision v0.6</div>
+    <div class="sidebar-footer"><span>ExoVision v0.6</span><span class="status-dot" title="Servizio attivo"></span></div>
   </nav>
 
   <main>
 
     <!-- ================= RICERCA ================= -->
     <section class="view active" id="view-search">
+      <div class="readout-strip" id="statStrip">
+        <div class="readout-cell"><span class="rv" id="statTotale">—</span><span class="rl">Osservazioni</span></div>
+        <div class="readout-cell"><span class="rv" id="statFoto">—</span><span class="rl">Foto</span></div>
+        <div class="readout-cell"><span class="rv" id="statVideo">—</span><span class="rl">Video</span></div>
+        <div class="readout-cell accent"><span class="rv" id="statIncompleti">—</span><span class="rl">Da completare</span></div>
+      </div>
       <div class="search-wrap">
-        <div class="search-bar">
-          <span class="ic">🔍</span>
+        <div class="search-bar" id="searchBar">
+          <span class="ic" data-icon="search"></span>
           <input type="text" id="searchInput" placeholder='Cerca per descrizione, oggetto, luogo, persona… es. "tramonto sul mare"'>
           <button id="searchBtn">Cerca</button>
         </div>
@@ -500,9 +587,9 @@
           <label class="title">Modalità di elaborazione</label>
           <div class="desc">Scegli dove eseguire l'inferenza degli embedding semantici.</div>
           <div class="segmented" id="modeSegmented">
-            <button class="seg-btn active" data-mode="locale">💻 Locale</button>
-            <button class="seg-btn" data-mode="cloud">☁️ Cloud</button>
-            <button class="seg-btn" data-mode="ibrida">🔀 Ibrida</button>
+            <button class="seg-btn active" data-mode="locale"><span class="ic" data-icon="cpu"></span> Locale</button>
+            <button class="seg-btn" data-mode="cloud"><span class="ic" data-icon="cloud"></span> Cloud</button>
+            <button class="seg-btn" data-mode="ibrida"><span class="ic" data-icon="shuffle"></span> Ibrida</button>
           </div>
           <div class="desc" id="modeDesc" style="margin-top:10px;">Elaborazione interamente sul dispositivo. Più lenta ma privacy massima.</div>
         </div>
@@ -547,7 +634,7 @@
     <section class="view" id="view-import">
       <h1 class="page-title">Importa nuovi file</h1>
       <div class="dropzone reticle" id="dropzone">
-        <div class="dz-icon">📂</div>
+        <div class="dz-icon"><span class="ic" data-icon="upload-cloud"></span></div>
         <div><strong>Trascina qui foto e video</strong> oppure clicca per selezionarli</div>
         <div class="subtle" style="margin-top:6px;">Formati supportati: JPG, PNG, HEIC, MP4, MOV</div>
         <input type="file" id="fileInput" multiple accept="image/*,video/*" style="display:none;">
@@ -594,6 +681,32 @@
 <script>
 (function(){
   "use strict";
+
+  /* ============================================================
+     ICONE (set SVG lineare coerente — sostituisce le emoji)
+  ============================================================ */
+  const ICONS = {
+    search: '<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+    settings: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 1 1-2.9 2.9l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2.05 2.05 0 1 1-4.1 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2.05 2.05 0 1 1-2.9-2.9l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2.05 2.05 0 1 1 0-4.1h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2.05 2.05 0 1 1 2.9-2.9l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2.05 2.05 0 1 1 4.1 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2.05 2.05 0 1 1 2.9 2.9l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2.05 2.05 0 1 1 0 4.1h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>',
+    tag: '<svg class="icon" viewBox="0 0 24 24"><path d="M20.6 13.4 10.9 3.7A2 2 0 0 0 9.5 3.1L4.2 3a1 1 0 0 0-1 1l.1 5.3a2 2 0 0 0 .58 1.4l9.7 9.7a2 2 0 0 0 2.83 0l4.2-4.2a2 2 0 0 0 0-2.8Z"/><circle class="filled" cx="7.6" cy="7.6" r="1.15"/></svg>',
+    upload: '<svg class="icon" viewBox="0 0 24 24"><path d="M12 19V6M6.5 11.5 12 6l5.5 5.5"/><path d="M4.5 20.5h15"/></svg>',
+    log: '<svg class="icon" viewBox="0 0 24 24"><path d="M7.8 4h10.7a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H7.8"/><path d="M4 4h1v16H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M10.5 9h6.2M10.5 13h6.2M10.5 17h4"/></svg>',
+    sun: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.6v2.3M12 19.1v2.3M5 5l1.6 1.6M17.4 17.4 19 19M2.6 12h2.3M19.1 12h2.3M5 19l1.6-1.6M17.4 6.6 19 5"/></svg>',
+    moon: '<svg class="icon" viewBox="0 0 24 24"><path d="M20.8 13.4A8.6 8.6 0 1 1 10.6 3.2a6.7 6.7 0 0 0 10.2 10.2Z"/></svg>',
+    cpu: '<svg class="icon" viewBox="0 0 24 24"><rect x="6.2" y="6.2" width="11.6" height="11.6" rx="1.4"/><path d="M9.2 2.5v3M14.8 2.5v3M9.2 18.5v3M14.8 18.5v3M2.5 9.2h3M2.5 14.8h3M18.5 9.2h3M18.5 14.8h3"/></svg>',
+    cloud: '<svg class="icon" viewBox="0 0 24 24"><path d="M7.2 18h10.8a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.7A3.5 3.5 0 0 0 7.2 18Z"/></svg>',
+    shuffle: '<svg class="icon" viewBox="0 0 24 24"><path d="M3.5 5h3.4l9.4 14H20M3.5 19h3.4l2.6-4M15.2 5H20v4.5M20 5l-6 10.7"/></svg>',
+    "upload-cloud": '<svg class="icon" viewBox="0 0 24 24"><path d="M7.2 18h9.6a4 4 0 0 0 .5-8 6 6 0 0 0-11.6 1.6A3.5 3.5 0 0 0 7.2 18Z"/><path d="M12 11v7M9.2 14.2 12 11.4l2.8 2.8"/></svg>',
+    video: '<svg class="icon" viewBox="0 0 24 24"><rect x="2.6" y="6.2" width="13" height="11.6" rx="1.4"/><path d="M15.6 10.6 21 7.2v9.6l-5.4-3.4Z"/></svg>',
+    image: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.4"/><circle cx="8.4" cy="9.4" r="1.6"/><path d="M21 16.2 15.6 11a1.5 1.5 0 0 0-2.1 0L4 19.5"/></svg>',
+    play: '<svg class="icon filled" viewBox="0 0 24 24"><path d="M7 4.2v15.6l13-7.8Z"/></svg>',
+    telescope: '<svg class="icon" viewBox="0 0 24 24"><path d="M3 10.6 15 6l1.6 4.3-12 4.4Z"/><path d="M9 12.3 7 19M16.2 8.4l3.5-1.3a1.4 1.4 0 0 1 1.8.8l.5 1.3a1.4 1.4 0 0 1-.8 1.8l-3.5 1.3"/><circle cx="6" cy="17.4" r="2"/></svg>',
+    archive: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>'
+  };
+  function icon(name){ return ICONS[name] || ""; }
+  function bindStaticIcons(){
+    document.querySelectorAll("[data-icon]").forEach(el => { el.innerHTML = icon(el.dataset.icon); });
+  }
 
   /* ============================================================
      UTILS
@@ -667,7 +780,7 @@
     document.body.classList.toggle("dark", on);
     darkModeToggle.checked = on;
     darkModeLabel.textContent = on ? "Modalità scura" : "Modalità chiara";
-    quickDarkToggle.textContent = on ? "☀️" : "🌙";
+    quickDarkToggle.innerHTML = icon(on ? "sun" : "moon");
     if (persist) localStorage.setItem("exovision_dark", on ? "1" : "0");
   }
   darkModeToggle.addEventListener("change", () => setDarkMode(darkModeToggle.checked, true));
@@ -682,12 +795,12 @@
   const searchBtn   = document.getElementById("searchBtn");
   const searchMeta  = document.getElementById("searchMeta");
 
-  function cardHTML(item) {
+  function cardHTML(item, i) {
     const isVideo   = item.tipo === "video";
-    const playBadge = isVideo ? '<div class="play-badge">▶</div>' : "";
+    const playBadge = isVideo ? `<div class="play-badge">${icon("play")}</div>` : "";
     const flag      = item.metadati_completi ? "" : '<div class="incomplete-flag">Incompleto</div>';
     return `
-      <div class="card reticle" data-id="${item.id}">
+      <div class="card reticle" data-id="${item.id}" style="--i:${i || 0}">
         <div class="thumb-wrap">
           ${flag}${playBadge}
           <img src="${item.anteprima}" alt="${escapeHtml(item.nome_file)}" loading="lazy">
@@ -707,11 +820,21 @@
   }
 
   let searchDebounce = null;
+  const searchBar = document.getElementById("searchBar");
+
+  function skeletonGridHTML(n){
+    let out = "";
+    for (let i = 0; i < n; i++) {
+      out += '<div class="skel-card"><div class="skel"></div><div class="skel-lines"><div class="skel"></div><div class="skel"></div></div></div>';
+    }
+    return out;
+  }
 
   async function renderGrid(query) {
     const q = (query || "").trim();
-    resultsGrid.innerHTML = '<p class="muted">Caricamento…</p>';
+    resultsGrid.innerHTML = skeletonGridHTML(8);
     searchMeta.textContent = "";
+    searchBar.classList.add("scanning");
     try {
       if (q) {
         const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=48`);
@@ -722,8 +845,8 @@
         }
         const data = await res.json();
         resultsGrid.innerHTML = data.results.length
-          ? data.results.map(cardHTML).join("")
-          : `<div class="empty-state"><span class="eic">🔭</span>Nessun risultato per "${escapeHtml(data.query || q)}".<br><span class="subtle">Prova un termine più generico o descrivi la scena diversamente.</span></div>`;
+          ? data.results.map((item, i) => cardHTML(item, i)).join("")
+          : `<div class="empty-state"><span class="eic">${icon("telescope")}</span>Nessun risultato per "${escapeHtml(data.query || q)}".<br><span class="subtle">Prova un termine più generico o descrivi la scena diversamente.</span></div>`;
         searchMeta.textContent = `${data.results.length} risultati per "${data.query}"`;
       } else {
         const res  = await fetch("/api/files?limit=48");
@@ -734,14 +857,16 @@
         }
         const data = await res.json();
         resultsGrid.innerHTML = data.results.length
-          ? data.results.map(cardHTML).join("")
-          : `<div class="empty-state"><span class="eic">📂</span>Archivio vuoto.<br><span class="subtle">Vai su <strong>Importa</strong> per aggiungere le prime foto e video.</span></div>`;
+          ? data.results.map((item, i) => cardHTML(item, i)).join("")
+          : `<div class="empty-state"><span class="eic">${icon("archive")}</span>Archivio vuoto.<br><span class="subtle">Vai su <strong>Importa</strong> per aggiungere le prime foto e video.</span></div>`;
         searchMeta.textContent = data.totale ? `${data.totale} elementi nell'archivio` : "";
       }
       bindCardClicks();
     } catch (e) {
       resultsGrid.innerHTML = '<p class="muted">Impossibile contattare il server. Verifica che il servizio sia avviato.</p>';
       console.error(e);
+    } finally {
+      searchBar.classList.remove("scanning");
     }
   }
 
@@ -1020,8 +1145,16 @@
     });
   }
 
+  function skeletonRowsHTML(n){
+    let out = "";
+    for (let i = 0; i < n; i++) {
+      out += '<tr class="skel-row">' + '<td><div class="skel"></div></td>'.repeat(7) + '</tr>';
+    }
+    return out;
+  }
+
   async function loadMetaTable() {
-    metaTableBody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:20px;">Caricamento…</td></tr>`;
+    metaTableBody.innerHTML = skeletonRowsHTML(7);
     try {
       const res = await fetch("/api/files?limit=500");
       if (!res.ok) {
@@ -1062,7 +1195,7 @@
   function renderFileList(){
     fileList.innerHTML = stagedFiles.map(f => `
       <div class="file-row">
-        <span>${f.type.startsWith("video") ? "🎬" : "🖼️"}</span>
+        <span style="color:var(--accent-dark);display:flex;">${icon(f.type.startsWith("video") ? "video" : "image")}</span>
         <span>${escapeHtml(f.name)}</span>
         <span class="fsize">${fmtSize(f.size)}</span>
       </div>`).join("");
@@ -1123,17 +1256,17 @@
         loadMetaTable();
       } else {
         const msg = (data && data.errore) || "Errore durante l'import.";
-        progressLabel.textContent = "❌ " + msg;
+        progressLabel.innerHTML = `<span class="badge badge-error">Errore</span> ${escapeHtml(msg)}`;
         addLogEntry("error", `Import fallito: ${msg}`);
-        showToast("❌ Import fallito");
+        showToast("Import fallito");
         startIndexBtn.disabled = false;
       }
     });
 
     xhr.addEventListener("error", () => {
-      progressLabel.textContent = "❌ Errore di rete durante l'import.";
+      progressLabel.innerHTML = '<span class="badge badge-error">Errore</span> Errore di rete durante l\'import.';
       addLogEntry("error", "Import fallito: errore di rete");
-      showToast("❌ Import fallito");
+      showToast("Import fallito");
       startIndexBtn.disabled = false;
     });
 
@@ -1181,6 +1314,10 @@
   });
 
   const brandSub = document.getElementById("brandSub");
+  const statTotale = document.getElementById("statTotale");
+  const statFoto = document.getElementById("statFoto");
+  const statVideo = document.getElementById("statVideo");
+  const statIncompleti = document.getElementById("statIncompleti");
 
   async function loadStatsIntoLog() {
     try {
@@ -1188,9 +1325,14 @@
       if (!res.ok) {
         addLogEntry("warning", "Statistiche archivio non disponibili");
         brandSub.textContent = "archivio non disponibile";
+        [statTotale, statFoto, statVideo, statIncompleti].forEach(el => el.textContent = "—");
         return;
       }
       const s = await res.json();
+      statTotale.textContent = s.file?.totale ?? "—";
+      statFoto.textContent = s.file?.foto ?? "—";
+      statVideo.textContent = s.file?.video ?? "—";
+      statIncompleti.textContent = s.file?.incompleti ?? 0;
       addLogEntry("info", "Sessione utente avviata");
       if (s.oggetti?.rilevamenti_totali > 0)
         addLogEntry("info", `Object detection: ${s.oggetti.rilevamenti_totali} rilevamenti totali`);
@@ -1204,12 +1346,14 @@
     } catch (e) {
       addLogEntry("info", "Servizio ExoVision avviato");
       brandSub.textContent = "archivio non disponibile";
+      [statTotale, statFoto, statVideo, statIncompleti].forEach(el => el.textContent = "—");
     }
   }
 
   /* ============================================================
      INIT
   ============================================================ */
+  bindStaticIcons();
   loadConfig();
   renderGrid("");
   loadMetaTable();
