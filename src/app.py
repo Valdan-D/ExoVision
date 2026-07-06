@@ -542,6 +542,7 @@ def save_config():
 
     return jsonify({"ok": True, "config": cfg})
 
+
 # ── Modifica manuale metadati ──────────────────────────────────────────────────
 
 @app.route("/api/file/<int:id>/metadata", methods=["POST"])
@@ -562,10 +563,10 @@ def update_file_metadata(id):
     cursor = conn.cursor()
 
     try:
-        # 1. Aggiorna il nome del file nella tabella principale 'file'
+        # 1. Aggiorna il nome del file nella tabella 'archivio' (corretto da 'file' ad 'archivio')
         if nome_file is not None:
             cursor.execute(
-                "UPDATE file SET nome_file = ? WHERE id = ?",
+                "UPDATE archivio SET nome_file = ? WHERE id = ?",
                 (nome_file, id)
             )
 
