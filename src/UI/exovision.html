@@ -1091,35 +1091,33 @@
     startIndexBtn.disabled = true;
     progressWrap.classList.remove("hidden");
     progressFill.style.width = "0%";
-    progressLabel.textContent = "Avvio indicizzazione…";
-    addLogEntry("info", `Avviata indicizzazione di ${stagedFiles.length} file`);
-    showToast("Indicizzazione avviata");
+    progressLabel.textContent = "Caricamento in corso…";
+    addLogEntry("info", `Avviato import di ${stagedFiles.length} file`);
+    showToast("Import avviato");
 
-    const steps = [
-      [20, "Analisi file in corso…"],
-      [45, "Estrazione frame video…"],
-      [70, "Calcolo embedding semantici…"],
-      [90, "Aggiornamento indice ricerca…"],
-      [100, "Indicizzazione completata"]
-    ];
-    let stepIdx = 0;
-    clearInterval(indexTimer);
-    indexTimer = setInterval(() => {
-      pct += 2 + Math.random() * 4;
-      if (stepIdx < steps.length && pct >= steps[stepIdx][0]) {
-        progressLabel.textContent = steps[stepIdx][1];
-        if (steps[stepIdx][0] === 45) addLogEntry("info", "Estrazione frame dai video in corso");
-        if (steps[stepIdx][0] === 70) addLogEntry("info", "Calcolo embedding semantici (CLIP-like) in corso");
-        if (steps[stepIdx][0] === 90 && stagedFiles.some(f => !f.type)) addLogEntry("warning", "Alcuni file non hanno un tipo MIME riconosciuto");
-        stepIdx++;
-      }
-      if (pct >= 100) {
-        pct = 100;
-        clearInterval(indexTimer);
+    const formData = new FormData();
+    stagedFiles.forEach(f => formData.append("files", f));
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/import");
+
+    // Upload = 0-90%, il resto è l'indicizzazione lato server (nessun progresso granulare disponibile)
+    xhr.upload.addEventListener("progress", e => {
+      if (!e.lengthComputable) return;
+      const pct = Math.round((e.loaded / e.total) * 90);
+      progressFill.style.width = pct + "%";
+      progressLabel.textContent = pct < 90 ? `Caricamento… ${pct}%` : "Indicizzazione in corso…";
+    });
+
+    xhr.addEventListener("load", () => {
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch (e) {}
+
+      if (xhr.status >= 200 && xhr.status < 300 && data) {
         progressFill.style.width = "100%";
-        progressLabel.textContent = `Completato — ${stagedFiles.length} file aggiunti all'archivio`;
-        addLogEntry("info", `Indicizzazione completata: ${stagedFiles.length} file aggiunti all'archivio`);
-        showToast("Indicizzazione completata");
+        progressLabel.textContent = `Completato — ${data.indicizzati} file aggiunti all'archivio`;
+        addLogEntry("info", `Import completato: ${data.indicizzati} aggiunti, ${data.saltati} saltati, ${data.errori} errori`);
+        showToast("Import completato");
         resetImportBtn.classList.remove("hidden");
         renderGrid("");
         loadMetaTable();
