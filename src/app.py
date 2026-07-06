@@ -543,66 +543,25 @@ def save_config():
     return jsonify({"ok": True, "config": cfg})
 
 
-# ── Modifica manuale metadati ──────────────────────────────────────────────────
+# ── Modifica manuale metadati (DIAGNOSTICA TEMPORANEA) ─────────────────────────
 
 @app.route("/api/file/<int:id>/metadata", methods=["POST"])
 def update_file_metadata(id):
-    """
-    Riceve le modifiche manuali dal frontend e aggiorna il database SQLite.
-    """
-    data = request.get_json(silent=True)
-    if not data:
-        abort(400, description="Dati JSON mancanti o non validi.")
-
-    nome_file = data.get("nome_file")
-    data_creazione = data.get("data_creazione")
-    gps_lat = data.get("gps_lat")
-    gps_lon = data.get("gps_lon")
-
     conn = get_db()
     cursor = conn.cursor()
-
     try:
-        # 1. Aggiorna il nome del file nella tabella 'files'
-        if nome_file is not None:
-            cursor.execute(
-                "UPDATE files SET nome_file = ? WHERE id = ?",
-                (nome_file, id)
-            )
-
-        # 2. Aggiorna o inserisci i metadati nella tabella 'metadata'
-        # Controlliamo prima se esiste già una riga per questo file
-        cursor.execute("SELECT id_file FROM metadata WHERE id_file = ?", (id,))
-        exists = cursor.fetchone()
-
-        if exists:
-            cursor.execute(
-                """
-                UPDATE metadata 
-                SET data_creazione = ?, gps_lat = ?, gps_lon = ? 
-                WHERE id_file = ?
-                """,
-                (data_creazione, gps_lat, gps_lon, id)
-            )
-        else:
-            cursor.execute(
-                """
-                INSERT INTO metadata (id_file, data_creazione, gps_lat, gps_lon) 
-                VALUES (?, ?, ?, ?)
-                """,
-                (id, data_creazione, gps_lat, gps_lon)
-            )
-
-        # Applica le modifiche nel database
-        conn.commit()
-        return jsonify({"ok": True, "messaggio": "Metadati aggiornati correttamente!"}), 200
-
-    except sqlite3.Error as e:
-        conn.rollback()
-        return jsonify({"errore": f"Errore del database: {str(e)}"}), 500
+        # Chiediamo a SQLite la lista esatta di tutte le tabelle nel tuo database
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tabelle = [row[0] for row in cursor.fetchall()]
+        
+        print("\n=== TABELLE SCOPERTE NEL DATABASE ===")
+        print(tabelle)
+        print("======================================\n")
+        
+        # Mostriamo la lista direttamente nell'errore sul browser
+        return jsonify({"errore": f"Controlla il terminale o leggi qui le tabelle reali: {tabelle}"}), 500
     finally:
         conn.close()
-
 # ── Gestione errori ───────────────────────────────────────────────────────────
 
 @app.errorhandler(404)
