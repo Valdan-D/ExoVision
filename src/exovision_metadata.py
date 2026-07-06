@@ -6,9 +6,13 @@ FFmpeg deve essere installato sul sistema: https://ffmpeg.org/download.html
 
 import sqlite3
 import os
+import sys
 import json
 from pathlib import Path
 from datetime import datetime
+
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
 
