@@ -543,6 +543,66 @@ def save_config():
     return jsonify({"ok": True, "config": cfg})
 
 
+# ── Modifica manuale metadati ──────────────────────────────────────────────────
+
+@app.route("/api/file/<int:id>/metadata", methods=["POST"])
+def update_file_metadata(id):
+    """
+    Riceve le modifiche manuali dal frontend e aggiorna il database SQLite nelle tabelle reali.
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        abort(400, description="Dati JSON mancanti o non validi.")
+
+    nome_file = data.get("nome_file")
+    data_creazione = data.get("data_creazione") # Ricevuto dall'HTML
+    gps_lat = data.get("gps_lat")
+    gps_lon = data.get("gps_lon")
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        # 1. Aggiorna il nome del file nella tabella principale 'files'
+        if nome_file is not None:
+            cursor.execute(
+                "UPDATE files SET nome_file = ? WHERE id = ?",
+                (nome_file, id)
+            )
+
+        # 2. Aggiorna o inserisci i dettagli nella tabella corretta 'metadati_foto'
+        # Nel tuo DB la colonna di collegamento è 'file_id'
+        cursor.execute("SELECT id FROM metadati_foto WHERE file_id = ?", (id,))
+        exists = cursor.fetchone()
+
+        if exists:
+            # Nel tuo DB la colonna della data si chiama 'data_scatto'
+            cursor.execute(
+                """
+                UPDATE metadati_foto 
+                SET data_scatto = ?, gps_lat = ?, gps_lon = ? 
+                WHERE file_id = ?
+                """,
+                (data_creazione, gps_lat, gps_lon, id)
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO metadati_foto (file_id, data_scatto, gps_lat, gps_lon) 
+                VALUES (?, ?, ?, ?)
+                """,
+                (id, data_creazione, gps_lat, gps_lon)
+            )
+
+        # Applica e salva definitivamente nel file del database
+        conn.commit()
+        return jsonify({"ok": True, "messaggio": "Metadati aggiornati correttamente!"}), 200
+
+    except sqlite3.Error as e:
+        conn.rollback()
+        return jsonify({"errore": f"Errore del database: {str(e)}"}), 500
+    finally:
+        conn.close()
 # ── Gestione errori ───────────────────────────────────────────────────────────
 
 @app.errorhandler(404)
