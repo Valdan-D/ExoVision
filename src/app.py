@@ -555,7 +555,7 @@ def update_file_metadata(id):
         abort(400, description="Dati JSON mancanti o non validi.")
 
     nome_file = data.get("nome_file")
-    data_creazione = data.get("data_creazione")
+    data_creazione = data.get("data_creazione") # Ricevuto dall'HTML
     gps_lat = data.get("gps_lat")
     gps_lon = data.get("gps_lon")
 
@@ -571,23 +571,24 @@ def update_file_metadata(id):
             )
 
         # 2. Aggiorna o inserisci i dettagli nella tabella corretta 'metadati_foto'
-        # La colonna si chiama 'id', non 'id_file'
-        cursor.execute("SELECT id FROM metadati_foto WHERE id = ?", (id,))
+        # Nel tuo DB la colonna di collegamento è 'file_id'
+        cursor.execute("SELECT id FROM metadati_foto WHERE file_id = ?", (id,))
         exists = cursor.fetchone()
 
         if exists:
+            # Nel tuo DB la colonna della data si chiama 'data_scatto'
             cursor.execute(
                 """
                 UPDATE metadati_foto 
-                SET data_creazione = ?, gps_lat = ?, gps_lon = ? 
-                WHERE id = ?
+                SET data_scatto = ?, gps_lat = ?, gps_lon = ? 
+                WHERE file_id = ?
                 """,
                 (data_creazione, gps_lat, gps_lon, id)
             )
         else:
             cursor.execute(
                 """
-                INSERT INTO metadati_foto (id, data_creazione, gps_lat, gps_lon) 
+                INSERT INTO metadati_foto (file_id, data_scatto, gps_lat, gps_lon) 
                 VALUES (?, ?, ?, ?)
                 """,
                 (id, data_creazione, gps_lat, gps_lon)
