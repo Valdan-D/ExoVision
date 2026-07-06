@@ -563,22 +563,22 @@ def update_file_metadata(id):
     cursor = conn.cursor()
 
     try:
-        # 1. Aggiorna il nome del file nella tabella 'archivio' (corretto da 'file' ad 'archivio')
+        # 1. Aggiorna il nome del file nella tabella 'files'
         if nome_file is not None:
             cursor.execute(
-                "UPDATE archivio SET nome_file = ? WHERE id = ?",
+                "UPDATE files SET nome_file = ? WHERE id = ?",
                 (nome_file, id)
             )
 
-        # 2. Aggiorna o inserisci i metadati nella tabella 'metadati'
+        # 2. Aggiorna o inserisci i metadati nella tabella 'metadata'
         # Controlliamo prima se esiste già una riga per questo file
-        cursor.execute("SELECT id_file FROM metadati WHERE id_file = ?", (id,))
+        cursor.execute("SELECT id_file FROM metadata WHERE id_file = ?", (id,))
         exists = cursor.fetchone()
 
         if exists:
             cursor.execute(
                 """
-                UPDATE metadati 
+                UPDATE metadata 
                 SET data_creazione = ?, gps_lat = ?, gps_lon = ? 
                 WHERE id_file = ?
                 """,
@@ -587,7 +587,7 @@ def update_file_metadata(id):
         else:
             cursor.execute(
                 """
-                INSERT INTO metadati (id_file, data_creazione, gps_lat, gps_lon) 
+                INSERT INTO metadata (id_file, data_creazione, gps_lat, gps_lon) 
                 VALUES (?, ?, ?, ?)
                 """,
                 (id, data_creazione, gps_lat, gps_lon)
