@@ -571,8 +571,8 @@ def update_file_metadata(id):
             )
 
         # 2. Aggiorna o inserisci i dettagli nella tabella corretta 'metadati_foto'
-        # Controlliamo se esiste già una riga per questo id_file
-        cursor.execute("SELECT id_file FROM metadati_foto WHERE id_file = ?", (id,))
+        # La colonna si chiama 'id', non 'id_file'
+        cursor.execute("SELECT id FROM metadati_foto WHERE id = ?", (id,))
         exists = cursor.fetchone()
 
         if exists:
@@ -580,14 +580,14 @@ def update_file_metadata(id):
                 """
                 UPDATE metadati_foto 
                 SET data_creazione = ?, gps_lat = ?, gps_lon = ? 
-                WHERE id_file = ?
+                WHERE id = ?
                 """,
                 (data_creazione, gps_lat, gps_lon, id)
             )
         else:
             cursor.execute(
                 """
-                INSERT INTO metadati_foto (id_file, data_creazione, gps_lat, gps_lon) 
+                INSERT INTO metadati_foto (id, data_creazione, gps_lat, gps_lon) 
                 VALUES (?, ?, ?, ?)
                 """,
                 (id, data_creazione, gps_lat, gps_lon)
