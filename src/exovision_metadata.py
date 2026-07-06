@@ -1,3 +1,5 @@
+# Importa la connessione e le funzioni di aggiornamento dal tuo file
+from exovision_db import get_connection, aggiorna_stato_file
 """
 ExoVision — Estrazione metadati foto/video e inserimento in SQLite
 Dipendenze: pip install Pillow piexif ffmpeg-python
