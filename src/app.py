@@ -543,23 +543,63 @@ def save_config():
     return jsonify({"ok": True, "config": cfg})
 
 
-# ── Modifica manuale metadati (DIAGNOSTICA TEMPORANEA) ─────────────────────────
+# ── Modifica manuale metadati ──────────────────────────────────────────────────
 
 @app.route("/api/file/<int:id>/metadata", methods=["POST"])
 def update_file_metadata(id):
+    """
+    Riceve le modifiche manuali dal frontend e aggiorna il database SQLite nelle tabelle reali.
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        abort(400, description="Dati JSON mancanti o non validi.")
+
+    nome_file = data.get("nome_file")
+    data_creazione = data.get("data_creazione")
+    gps_lat = data.get("gps_lat")
+    gps_lon = data.get("gps_lon")
+
     conn = get_db()
     cursor = conn.cursor()
+
     try:
-        # Chiediamo a SQLite la lista esatta di tutte le tabelle nel tuo database
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tabelle = [row[0] for row in cursor.fetchall()]
-        
-        print("\n=== TABELLE SCOPERTE NEL DATABASE ===")
-        print(tabelle)
-        print("======================================\n")
-        
-        # Mostriamo la lista direttamente nell'errore sul browser
-        return jsonify({"errore": f"Controlla il terminale o leggi qui le tabelle reali: {tabelle}"}), 500
+        # 1. Aggiorna il nome del file nella tabella principale 'files'
+        if nome_file is not None:
+            cursor.execute(
+                "UPDATE files SET nome_file = ? WHERE id = ?",
+                (nome_file, id)
+            )
+
+        # 2. Aggiorna o inserisci i dettagli nella tabella corretta 'metadati_foto'
+        # Controlliamo se esiste già una riga per questo id_file
+        cursor.execute("SELECT id_file FROM metadati_foto WHERE id_file = ?", (id,))
+        exists = cursor.fetchone()
+
+        if exists:
+            cursor.execute(
+                """
+                UPDATE metadati_foto 
+                SET data_creazione = ?, gps_lat = ?, gps_lon = ? 
+                WHERE id_file = ?
+                """,
+                (data_creazione, gps_lat, gps_lon, id)
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO metadati_foto (id_file, data_creazione, gps_lat, gps_lon) 
+                VALUES (?, ?, ?, ?)
+                """,
+                (id, data_creazione, gps_lat, gps_lon)
+            )
+
+        # Applica e salva definitivamente nel file del database
+        conn.commit()
+        return jsonify({"ok": True, "messaggio": "Metadati aggiornati correttamente!"}), 200
+
+    except sqlite3.Error as e:
+        conn.rollback()
+        return jsonify({"errore": f"Errore del database: {str(e)}"}), 500
     finally:
         conn.close()
 # ── Gestione errori ───────────────────────────────────────────────────────────
