@@ -898,67 +898,45 @@
   }
 
   async function openDetail(id) {
-    detailBody.innerHTML = '<p class="muted" style="padding:30px;">Caricamento…</p>';
-    detailOverlay.classList.add("show");
-    window.scrollTo(0, 0);
-
-    try {
-      const res = await fetch(`/api/file/${id}`);
-      if (!res.ok) {
-        detailBody.innerHTML = '<p class="muted" style="padding:30px;">File non trovato.</p>';
-        return;
-      }
-      const data = await res.json();
-      const f    = data.file;
-      const meta = data.metadati || {};
-      const ocr  = data.ocr     || {};
-      const isVideo = f.tipo === "video";
-
-      detailBreadcrumb.textContent = (f.path || "") + "  " + catalogId(f.id);
-
-      const dimensioni = meta.larghezza && meta.altezza
-        ? `${meta.larghezza} × ${meta.altezza} px` : "—";
-      const dataVisibile = meta.data_scatto || (f.data_modifica || "").split("T")[0] || "—";
-      const sizeVisibile = f.dimensione_bytes
-        ? (f.dimensione_bytes / (1024 * 1024)).toFixed(1) + " MB" : "—";
-
-      const metaRows = isVideo ? `
-        <div class="meta-row"><span>Durata</span><span>${meta.durata_secondi ? meta.durata_secondi.toFixed(1) + " s" : "—"}</span></div>
-        <div class="meta-row"><span>Risoluzione</span><span>${dimensioni}</span></div>
-        <div class="meta-row"><span>Framerate</span><span>${meta.framerate ? meta.framerate + " fps" : "—"}</span></div>
-        <div class="meta-row"><span>Codec video</span><span>${meta.codec_video || "—"}</span></div>
-        <div class="meta-row"><span>Codec audio</span><span>${meta.codec_audio || "—"}</span></div>
-      ` : `
-        <div class="meta-row"><span>Data scatto</span><span>${meta.data_scatto || "—"}</span></div>
-        <div class="meta-row"><span>Risoluzione</span><span>${dimensioni}</span></div>
-        <div class="meta-row"><span>Fotocamera</span><span>${[meta.camera_make, meta.camera_model].filter(Boolean).join(" ") || "—"}</span></div>
-        <div class="meta-row"><span>ISO</span><span>${meta.iso || "—"}</span></div>
-        <div class="meta-row"><span>Apertura</span><span>${meta.apertura || "—"}</span></div>
-        <div class="meta-row"><span>Otturatore</span><span>${meta.otturatore || "—"}</span></div>
-        ${meta.gps_lat ? `<div class="meta-row"><span>GPS</span><span>${meta.gps_lat.toFixed(5)}, ${meta.gps_lon.toFixed(5)}</span></div>` : ""}
-      `;
-
-      const oggettiChips = data.oggetti && data.oggetti.length
-        ? data.oggetti.map(o =>
-            `<span class="chip">${escapeHtml(o.oggetto)} <span style="opacity:.6">${Math.round(o.confidenza * 100)}%</span></span>`
-          ).join("")
-        : '<span class="muted">Nessun oggetto rilevato</span>';
-
-      const ocrBlock = ocr.testo
-        ? `<blockquote class="ocr-text">${escapeHtml(ocr.testo)}</blockquote>
-           <div class="subtle" style="margin-top:6px;">Confidenza: ${ocr.confidenza ? Math.round(ocr.confidenza * 100) + "%" : "—"}</div>`
-        : '<p class="muted">Nessun testo rilevato.</p>';
-
-      const mediaEl = isVideo
-        ? `<video controls style="width:100%;max-height:640px;border-radius:var(--radius);" src="/api/thumb/${f.id}"></video>`
-        : `<img src="/api/thumb/${f.id}" alt="${escapeHtml(f.nome_file)}">`;
-
-      detailBody.innerHTML = `
-        <div class="detail-main">
-          <div class="detail-img-wrap reticle">${mediaEl}</div>
-          <div class="detail-meta">
-            <span class="eyebrow">Osservazione ${catalogId(f.id)}</span>
-            <h2>${escapeHtml(f.nome_file)}</h2>
+  detailBody.innerHTML = '<p class="muted" style="padding:30px;">Caricamento…</p>';
+  detailOverlay.classList.add("show");
+  window.scrollTo(0, 0);
+  try {
+    const res = await fetch(`/api/file/${id}`);
+    if (!res.ok) {
+      detailBody.innerHTML = '<p class="muted" style="padding:30px;">File non trovato.</p>';
+      return;
+    }
+    const data = await res.json();
+    const f = data.file;
+    const meta = data.metadati || {};
+    const ocr = data.ocr || {};
+    const isVideo = f.tipo === "video";
+    const dataVisibile = meta.data_creazione || "—";
+    const sizeVisibile = f.dimensione_file ? fmtSize(f.dimensione_file) : "—";
+    
+    let metaRows = "";
+    if (meta.larghezza && meta.altezza) metaRows += `<div class="meta-row"><span>Risoluzione</span><span>${meta.larghezza}x${meta.altezza}</span></div>`;
+    if (meta.gps_lat && meta.gps_lon) metaRows += `<div class="meta-row"><span>GPS</span><span>${meta.gps_lat.toFixed(5)}, ${meta.gps_lon.toFixed(5)}</span></div>`;
+    
+    const oggettiChips = data.oggetti && data.oggetti.length ? data.oggetti.map(o => `<span class="chip">${escapeHtml(o.oggetto)} <span style="opacity:.6">${Math.round(o.confidenza * 100)}%</span></span>` ).join("") : '<span class="muted">Nessun oggetto rilevato</span>';
+    const ocrBlock = ocr.testo ? `<blockquote class="ocr-text">${escapeHtml(ocr.testo)}</blockquote> <div class="subtle" style="margin-top:6px;">Confidenza: ${ocr.confidenza ? Math.round(ocr.confidenza * 100) + "%" : "—"}</div>` : '<p class="muted">Nessun testo rilevato.</p>';
+    const mediaEl = isVideo ? `<video controls style="width:100%;max-height:640px;border-radius:var(--radius);" src="/api/thumb/${f.id}"></video>` : `<img src="/api/thumb/${f.id}" alt="${escapeHtml(f.nome_file)}">`;
+    
+    // Iniezione del layout aggiornato con doppia modalità (view ed edit) nel pannello dei metadati
+    detailBody.innerHTML = `
+      <div class="detail-main">
+        <div class="detail-img-wrap reticle">${mediaEl}</div>
+        <div class="detail-meta">
+          <span class="eyebrow">Osservazione ${catalogId(f.id)}</span>
+          
+          <div id="metaViewMode">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:6px;">
+              <h2 style="margin:0;">${escapeHtml(f.nome_file)}</h2>
+              <button id="editMetaBtn" class="icon-btn" title="Modifica metadati" style="width:32px; height:32px; padding:0; flex-shrink:0;">
+                <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              </button>
+            </div>
             ${!f.metadati_completi ? '<span class="badge badge-warning" style="display:inline-block;margin-bottom:14px;">Metadati incompleti</span>' : ""}
             <div class="meta-row"><span>Tipo</span><span>${isVideo ? "Video" : "Immagine"}</span></div>
             <div class="meta-row"><span>Data</span><span>${dataVisibile}</span></div>
@@ -969,23 +947,114 @@
               <div class="chips" style="margin-top:8px;">${oggettiChips}</div>
             </div>
           </div>
+
+          <div id="metaEditMode" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+            <h3 style="margin:0 0 4px; font-family:var(--font-display); font-size:1.15rem;">Modifica Manuale</h3>
+            
+            <div>
+              <label style="font-size:.78rem; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px;">Nome file / Titolo</label>
+              <input type="text" id="inputNomeFile" value="${escapeHtml(f.nome_file || '')}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); color:var(--text);">
+            </div>
+            
+            <div>
+              <label style="font-size:.78rem; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px;">Data creazione</label>
+              <input type="text" id="inputDataCreazione" value="${escapeHtml(meta.data_creazione || '')}" placeholder="AAAA-MM-GG HH:MM:SS" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); color:var(--text); font-family:var(--font-mono);">
+            </div>
+
+            <div>
+              <label style="font-size:.78rem; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px;">Latitudine GPS</label>
+              <input type="number" step="any" id="inputGpsLat" value="${meta.gps_lat || ''}" placeholder="es. 45.4642" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); color:var(--text); font-family:var(--font-mono);">
+            </div>
+
+            <div>
+              <label style="font-size:.78rem; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px;">Longitudine GPS</label>
+              <input type="number" step="any" id="inputGpsLon" value="${meta.gps_lon || ''}" placeholder="es. 9.1900" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); color:var(--text); font-family:var(--font-mono);">
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:6px;">
+              <button class="btn" id="saveMetaBtn" style="flex:1; padding:8px 12px; font-size:.85rem;">Salva</button>
+              <button class="btn secondary" id="cancelMetaBtn" style="flex:1; padding:8px 12px; font-size:.85rem;">Annulla</button>
+            </div>
+          </div>
+
         </div>
+      </div>
+      <div class="section-title">Testo OCR</div>
+      ${ocrBlock}
+      <div class="section-title">Elementi simili <span class="count">(${data.simili.length})</span></div>
+      ${similiRowHTML(data.simili)}
+    `;
+    
+    // Riassegnazione degli eventi per le card degli elementi simili
+    detailBody.querySelectorAll(".thumb-card").forEach(card => {
+      card.addEventListener("click", () => openDetail(parseInt(card.dataset.id, 10)));
+    });
 
-        <div class="section-title">Testo OCR</div>
-        ${ocrBlock}
+    // Gestione degli eventi per l'interfaccia di modifica manuale dei metadati
+    const editMetaBtn = document.getElementById("editMetaBtn");
+    const cancelMetaBtn = document.getElementById("cancelMetaBtn");
+    const saveMetaBtn = document.getElementById("saveMetaBtn");
+    const metaViewMode = document.getElementById("metaViewMode");
+    const metaEditMode = document.getElementById("metaEditMode");
 
-        <div class="section-title">Elementi simili <span class="count">(${data.simili.length})</span></div>
-        ${similiRowHTML(data.simili)}
-      `;
-
-      detailBody.querySelectorAll(".thumb-card").forEach(card => {
-        card.addEventListener("click", () => openDetail(parseInt(card.dataset.id, 10)));
+    if (editMetaBtn && cancelMetaBtn && saveMetaBtn) {
+      // Clic sulla penna -> Mostra il form di modifica
+      editMetaBtn.addEventListener("click", () => {
+        metaViewMode.classList.add("hidden");
+        metaEditMode.classList.remove("hidden");
       });
-    } catch (e) {
-      detailBody.innerHTML = '<p class="muted" style="padding:30px;">Errore nel caricamento del dettaglio.</p>';
-      console.error(e);
+
+      // Clic su Annulla -> Ritorna alla visualizzazione semplice
+      cancelMetaBtn.addEventListener("click", () => {
+        metaViewMode.classList.remove("hidden");
+        metaEditMode.classList.add("hidden");
+      });
+
+      // Clic su Salva -> Invia i dati modificati al backend Python
+      saveMetaBtn.addEventListener("click", async () => {
+        saveMetaBtn.disabled = true;
+        saveMetaBtn.textContent = "Salvataggio…";
+
+        const payload = {
+          nome_file: document.getElementById("inputNomeFile").value,
+          data_creazione: document.getElementById("inputDataCreazione").value,
+          gps_lat: document.getElementById("inputGpsLat").value ? parseFloat(document.getElementById("inputGpsLat").value) : null,
+          gps_lon: document.getElementById("inputGpsLon").value ? parseFloat(document.getElementById("inputGpsLon").value) : null
+        };
+
+        try {
+          const response = await fetch(`/api/file/${id}/metadata`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.ok) {
+            showToast("Metadati aggiornati correttamente!");
+            // Ricarica la vista dettaglio corrente per mostrare i dati aggiornati
+            openDetail(id);
+            // Aggiorna opzionalmente la griglia sullo sfondo
+            if (typeof renderGrid === "function") renderGrid(searchInput.value);
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            alert("Errore durante il salvataggio: " + (errData.errore || "Risposta d'errore dal server"));
+            saveMetaBtn.disabled = false;
+            saveMetaBtn.textContent = "Salva";
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Impossibile connettersi al server Python.");
+          saveMetaBtn.disabled = false;
+          saveMetaBtn.textContent = "Salva";
+        }
+      });
     }
+
+  } catch (e) {
+    detailBody.innerHTML = '<p class="muted" style="padding:30px;">Errore nel caricamento del dettaglio.</p>';
+    console.error(e);
   }
+}
 
   function closeDetail() { detailOverlay.classList.remove("show"); }
   closeDetailBtn.addEventListener("click", closeDetail);
