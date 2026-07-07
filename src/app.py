@@ -62,7 +62,7 @@ def _ensure_schema(conn: sqlite3.Connection):
             dimensione_bytes    INTEGER,
             data_modifica       TEXT,
             data_indicizzazione TEXT,
-            metadati_completi   INTEGER DEFAULT 0
+            metadati_completi   INTEGER DEFAULT 0,
             descrizione         TEXT
         );
 
