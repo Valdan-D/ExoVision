@@ -94,7 +94,10 @@ def _ensure_schema(conn: sqlite3.Connection):
             codec_video     TEXT,
             codec_audio     TEXT,
             bitrate         INTEGER,
-            extra           TEXT
+            extra           TEXT,
+            data_creazione  TEXT,
+            gps_lat         REAL,
+            gps_lon         REAL
         );
 
         CREATE TABLE IF NOT EXISTS ocr (
@@ -136,12 +139,18 @@ def _ensure_schema(conn: sqlite3.Connection):
     """)
     conn.commit()
 
-# ── Aggiunta colonna descrizione se non esiste ──
-    try:
-        conn.execute("ALTER TABLE files ADD COLUMN descrizione TEXT;")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  
+# ── Aggiunta colonne mancanti sui DB creati con schema precedente ──
+    for tabella, colonna, tipo in [
+        ("files", "descrizione", "TEXT"),
+        ("metadati_video", "data_creazione", "TEXT"),
+        ("metadati_video", "gps_lat", "REAL"),
+        ("metadati_video", "gps_lon", "REAL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE {tabella} ADD COLUMN {colonna} {tipo};")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -245,9 +254,11 @@ def file_detail(file_id):
             abort(404, description=f"File {file_id} non trovato nel database.")
 
         # Metadati specifici per tipo
+        # NB: la UI legge/scrive la data come "data_creazione" per entrambi i tipi;
+        # nella tabella foto la colonna storica si chiama "data_scatto" (EXIF), va aliasata.
         if file_row["tipo"] == "foto":
             meta = conn.execute(
-                "SELECT * FROM metadati_foto WHERE file_id = ?", (file_id,)
+                "SELECT *, data_scatto AS data_creazione FROM metadati_foto WHERE file_id = ?", (file_id,)
             ).fetchone()
         else:
             meta = conn.execute(
@@ -584,28 +595,30 @@ def update_file_metadata(id):
             (nome_file, descrizione, id)
         )
 
-        # 3. Aggiorna i dettagli specifici (data e GPS) solo se si tratta di una foto
-        if tipo == "foto":
-            cursor.execute("SELECT id FROM metadati_foto WHERE file_id = ?", (id,))
-            exists = cursor.fetchone()
+        # 3. Aggiorna i dettagli specifici (data e GPS) nella tabella corretta in base al tipo
+        tabella = "metadati_foto" if tipo == "foto" else "metadati_video"
+        colonna_data = "data_scatto" if tipo == "foto" else "data_creazione"
 
-            if exists:
-                cursor.execute(
-                    """
-                    UPDATE metadati_foto 
-                    SET data_scatto = ?, gps_lat = ?, gps_lon = ? 
-                    WHERE file_id = ?
-                    """,
-                    (data_creazione, gps_lat, gps_lon, id)
-                )
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO metadati_foto (file_id, data_scatto, gps_lat, gps_lon) 
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (id, data_creazione, gps_lat, gps_lon)
-                )
+        cursor.execute(f"SELECT id FROM {tabella} WHERE file_id = ?", (id,))
+        exists = cursor.fetchone()
+
+        if exists:
+            cursor.execute(
+                f"""
+                UPDATE {tabella}
+                SET {colonna_data} = ?, gps_lat = ?, gps_lon = ?
+                WHERE file_id = ?
+                """,
+                (data_creazione, gps_lat, gps_lon, id)
+            )
+        else:
+            cursor.execute(
+                f"""
+                INSERT INTO {tabella} (file_id, {colonna_data}, gps_lat, gps_lon)
+                VALUES (?, ?, ?, ?)
+                """,
+                (id, data_creazione, gps_lat, gps_lon)
+            )
 
         conn.commit()
         return jsonify({"ok": True, "messaggio": "Salvataggio completato con successo!"}), 200
