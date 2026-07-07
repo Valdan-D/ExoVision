@@ -922,7 +922,7 @@
     const sizeVisibile = f.dimensione_file ? fmtSize(f.dimensione_file) : "—";
 
     // Descrizione manuale scritta dall'utente (campo libero, distinto dagli oggetti rilevati dall'AI)
-    const descrizioneVal = meta.descrizione || "";
+    const descrizioneVal = f.descrizione || "";
     const descrizioneBlock = descrizioneVal
       ? `<div class="obs-description">${escapeHtml(descrizioneVal)}</div>`
       : `<div class="obs-description empty">Nessuna descrizione — clicca sulla matita per aggiungerne una.</div>`;
@@ -1261,6 +1261,11 @@
   metaSearchInput.addEventListener("input", renderMetaTable);
   metaIncompleteOnly.addEventListener("change", renderMetaTable);
 
+<div class="metadata-group" style="margin-top: 15px;">
+    <label style="font-weight: bold; display: block; margin-bottom: 5px;">Descrizione Utente:</label>
+    <p id="view-descrizione" style="font-style: italic; color: #555; min-height: 20px;"></p>
+    <textarea id="edit-descrizione" class="form-control" rows="3" style="display: none; width: 100%; resize: vertical; margin-bottom: 10px;"></textarea>
+</div>
   /* ============================================================
      IMPORTA
   ============================================================ */
