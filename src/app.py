@@ -63,6 +63,7 @@ def _ensure_schema(conn: sqlite3.Connection):
             data_modifica       TEXT,
             data_indicizzazione TEXT,
             metadati_completi   INTEGER DEFAULT 0
+            descrizione         TEXT
         );
 
         CREATE TABLE IF NOT EXISTS metadati_foto (
@@ -134,6 +135,13 @@ def _ensure_schema(conn: sqlite3.Connection):
         );
     """)
     conn.commit()
+
+# ── Aggiunta colonna descrizione se non esiste ──
+    try:
+        conn.execute("ALTER TABLE files ADD COLUMN descrizione TEXT;")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -543,7 +551,7 @@ def save_config():
     return jsonify({"ok": True, "config": cfg})
 
 
-# ── Modifica manuale metadati ──────────────────────────────────────────────────
+# ── Modifica manuale metadati e descrizione ─────────────────────────────────────
 
 @app.route("/api/file/<int:id>/metadata", methods=["POST"])
 def update_file_metadata(id):
@@ -555,7 +563,8 @@ def update_file_metadata(id):
         abort(400, description="Dati JSON mancanti o non validi.")
 
     nome_file = data.get("nome_file")
-    data_creazione = data.get("data_creazione") # Ricevuto dall'HTML
+    descrizione = data.get("descrizione")
+    data_creazione = data.get("data_creazione")
     gps_lat = data.get("gps_lat")
     gps_lon = data.get("gps_lon")
 
@@ -563,40 +572,43 @@ def update_file_metadata(id):
     cursor = conn.cursor()
 
     try:
-        # 1. Aggiorna il nome del file nella tabella principale 'files'
-        if nome_file is not None:
-            cursor.execute(
-                "UPDATE files SET nome_file = ? WHERE id = ?",
-                (nome_file, id)
-            )
+        # 1. Controlla se il file esiste e identifica se è una foto o un video
+        file_row = cursor.execute("SELECT tipo FROM files WHERE id = ?", (id,)).fetchone()
+        if not file_row:
+            abort(404, description="File non trovato.")
+        tipo = file_row["tipo"]
 
-        # 2. Aggiorna o inserisci i dettagli nella tabella corretta 'metadati_foto'
-        # Nel tuo DB la colonna di collegamento è 'file_id'
-        cursor.execute("SELECT id FROM metadati_foto WHERE file_id = ?", (id,))
-        exists = cursor.fetchone()
+        # 2. Aggiorna nome_file e descrizione nella tabella principale 'files'
+        cursor.execute(
+            "UPDATE files SET nome_file = ?, descrizione = ? WHERE id = ?",
+            (nome_file, descrizione, id)
+        )
 
-        if exists:
-            # Nel tuo DB la colonna della data si chiama 'data_scatto'
-            cursor.execute(
-                """
-                UPDATE metadati_foto 
-                SET data_scatto = ?, gps_lat = ?, gps_lon = ? 
-                WHERE file_id = ?
-                """,
-                (data_creazione, gps_lat, gps_lon, id)
-            )
-        else:
-            cursor.execute(
-                """
-                INSERT INTO metadati_foto (file_id, data_scatto, gps_lat, gps_lon) 
-                VALUES (?, ?, ?, ?)
-                """,
-                (id, data_creazione, gps_lat, gps_lon)
-            )
+        # 3. Aggiorna i dettagli specifici (data e GPS) solo se si tratta di una foto
+        if tipo == "foto":
+            cursor.execute("SELECT id FROM metadati_foto WHERE file_id = ?", (id,))
+            exists = cursor.fetchone()
 
-        # Applica e salva definitivamente nel file del database
+            if exists:
+                cursor.execute(
+                    """
+                    UPDATE metadati_foto 
+                    SET data_scatto = ?, gps_lat = ?, gps_lon = ? 
+                    WHERE file_id = ?
+                    """,
+                    (data_creazione, gps_lat, gps_lon, id)
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO metadati_foto (file_id, data_scatto, gps_lat, gps_lon) 
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (id, data_creazione, gps_lat, gps_lon)
+                )
+
         conn.commit()
-        return jsonify({"ok": True, "messaggio": "Metadati aggiornati correttamente!"}), 200
+        return jsonify({"ok": True, "messaggio": "Salvataggio completato con successo!"}), 200
 
     except sqlite3.Error as e:
         conn.rollback()
