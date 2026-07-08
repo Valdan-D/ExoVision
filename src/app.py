@@ -8,12 +8,17 @@ Poi apri il browser su: http://localhost:5000
 import sqlite3
 import os
 import json
+import threading
 from pathlib import Path
 from uuid import uuid4
 from flask import Flask, jsonify, request, send_from_directory, abort
 from werkzeug.utils import secure_filename
 
 import exovision_metadata as metadata_pipeline
+import exovision_ocr as ocr_pipeline
+import exovision_yolo as yolo_pipeline
+import exovision_frames as frames_pipeline
+import exovision_whisper as whisper_pipeline
 
 app = Flask(__name__, static_folder="UI", static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB per richiesta di import
@@ -39,6 +44,109 @@ def load_config():
         return json.load(f)
 
 DB_PATH = os.environ.get("EXOVISION_DB", load_config()["archivio"]["db"])
+
+
+# ── Elaborazione in background dopo /api/import (OCR/YOLO/frame/whisper) ──────
+#
+# /api/import fa solo lo step 1 (metadati) in modo sincrono e risponde subito.
+# OCR/YOLO/frame/trascrizione partono in un thread separato per ogni file
+# appena caricato, così l'upload non resta bloccato per i tempi di
+# caricamento modelli + inferenza (da ~1s a video lunghi con whisper).
+# Se una libreria non è installata (es. faster-whisper), il relativo step
+# viene semplicemente saltato: gli altri proseguono normalmente.
+
+_model_lock  = threading.Lock()
+_ocr_reader  = None
+_yolo_model  = None
+_whisper_model = None
+
+def _get_ocr_reader():
+    global _ocr_reader
+    if _ocr_reader is None and ocr_pipeline.EASYOCR_OK:
+        with _model_lock:
+            if _ocr_reader is None:
+                _ocr_reader = ocr_pipeline.easyocr.Reader(ocr_pipeline.LINGUE, gpu=False)
+    return _ocr_reader
+
+def _get_yolo_model():
+    global _yolo_model
+    if _yolo_model is None and yolo_pipeline.YOLO_OK:
+        with _model_lock:
+            if _yolo_model is None:
+                _yolo_model = yolo_pipeline.YOLO(yolo_pipeline.MODELLO)
+    return _yolo_model
+
+def _get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None and whisper_pipeline.WHISPER_OK:
+        with _model_lock:
+            if _whisper_model is None:
+                _whisper_model = whisper_pipeline.WhisperModel(
+                    whisper_pipeline.MODELLO, device="cpu", compute_type="int8"
+                )
+    return _whisper_model
+
+
+_in_progress_lock = threading.Lock()
+_in_progress_ids  = set()
+
+def _file_in_elaborazione(file_id: int) -> bool:
+    with _in_progress_lock:
+        return file_id in _in_progress_ids
+
+def _post_process_file(file_id: int, path: str, tipo: str):
+    """
+    Esegue OCR+YOLO (foto) o keyframe+trascrizione (video) su un singolo file
+    appena importato. Girato in un thread di background da /api/import.
+    """
+    with _in_progress_lock:
+        _in_progress_ids.add(file_id)
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        if tipo == "foto":
+            if ocr_pipeline.EASYOCR_OK:
+                try:
+                    reader = _get_ocr_reader()
+                    testo, confidenza = ocr_pipeline.estrai_testo(reader, path)
+                    ocr_pipeline.init_tabella_ocr(conn)
+                    lingua = "+".join(ocr_pipeline.LINGUE) if testo else None
+                    ocr_pipeline.inserisci_ocr(conn, file_id, testo, lingua, confidenza)
+                except Exception as e:
+                    print(f"⚠️  Errore OCR in background su file {file_id}: {e}")
+
+            if yolo_pipeline.YOLO_OK:
+                try:
+                    model = _get_yolo_model()
+                    oggetti = yolo_pipeline.rileva_oggetti(model, path)
+                    yolo_pipeline.init_tabella_oggetti(conn)
+                    yolo_pipeline.inserisci_oggetti(conn, file_id, oggetti)
+                except Exception as e:
+                    print(f"⚠️  Errore YOLO in background su file {file_id}: {e}")
+
+        else:  # video
+            if frames_pipeline.FFMPEG_OK:
+                try:
+                    cartella_out = Path(__file__).parent.parent / frames_pipeline.CARTELLA_FRAME
+                    cartella_out.mkdir(parents=True, exist_ok=True)
+                    frames = frames_pipeline.estrai_keyframe(path, cartella_out, file_id, Path(path).stem)
+                    frames_pipeline.init_tabella_frame(conn)
+                    frames_pipeline.inserisci_frame(conn, file_id, frames)
+                except Exception as e:
+                    print(f"⚠️  Errore estrazione frame in background su file {file_id}: {e}")
+
+            if whisper_pipeline.WHISPER_OK:
+                try:
+                    model = _get_whisper_model()
+                    testo, lingua, confidenza = whisper_pipeline.estrai_testo(model, path)
+                    whisper_pipeline.init_tabella_trascrizioni(conn)
+                    whisper_pipeline.inserisci_trascrizione(conn, file_id, testo, lingua, confidenza)
+                except Exception as e:
+                    print(f"⚠️  Errore trascrizione in background su file {file_id}: {e}")
+    finally:
+        conn.close()
+        with _in_progress_lock:
+            _in_progress_ids.discard(file_id)
 
 
 # ── Utility DB ────────────────────────────────────────────────────────────────
@@ -379,8 +487,9 @@ def file_list():
                     "nome_file":         row["nome_file"],
                     "tipo":              row["tipo"],
                     "path":              row["path"],
-                    "metadati_completi": bool(row["metadati_completi"]),
-                    "file_esistente":    Path(row["path"]).exists(),
+                    "metadati_completi":    bool(row["metadati_completi"]),
+                    "file_esistente":       Path(row["path"]).exists(),
+                    "elaborazione_in_corso": _file_in_elaborazione(row["id"]),
                     "anteprima":         f"/api/preview/{row['id']}",
                     "dimensione_bytes":  row["dimensione_bytes"],
                     "data":              row["data_scatto"] or (row["data_modifica"] or "").split("T")[0] or None,
@@ -538,7 +647,9 @@ def import_files():
     Riceve i file caricati dalla tab Importa (multipart/form-data, campo "files"),
     li salva su disco e li indicizza subito con la stessa logica di
     exovision_metadata.py (metadati EXIF/ffprobe → SQLite).
-    OCR/YOLO/frame/trascrizione restano step separati, da lanciare a parte.
+    OCR/YOLO/frame/trascrizione partono subito dopo in background (un thread
+    per file, vedi _post_process_file) e non ritardano la risposta di questo
+    endpoint: /api/files espone "elaborazione_in_corso" per farlo sapere alla UI.
     """
     files = request.files.getlist("files")
     if not files:
@@ -579,6 +690,10 @@ def import_files():
             else:
                 meta = metadata_pipeline.estrai_metadati_video(str(dest))
                 metadata_pipeline.inserisci_metadati_video(conn, file_id, meta)
+
+            threading.Thread(
+                target=_post_process_file, args=(file_id, str(dest), tipo), daemon=True
+            ).start()
 
             indicizzati += 1
     finally:

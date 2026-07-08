@@ -21,8 +21,11 @@ try:
     EASYOCR_OK = True
 except ImportError:
     EASYOCR_OK = False
-    print("⚠️  easyocr non trovato. Installa con: pip install easyocr Pillow")
-    sys.exit(1)
+    # NB: niente sys.exit qui — questo modulo viene anche importato da app.py
+    # per l'elaborazione in background dopo /api/import, e deve poter restare
+    # importabile (con EASYOCR_OK=False) anche se easyocr non è installato.
+    # Il controllo che interrompe l'esecuzione da riga di comando è più sotto,
+    # nel blocco `if __name__ == "__main__":`.
 
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
@@ -249,6 +252,10 @@ def mostra_risultati(db_path: str = "exovision.db"):
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    if not EASYOCR_OK:
+        print("⚠️  easyocr non trovato. Installa con: pip install easyocr Pillow")
+        sys.exit(1)
+
     if len(sys.argv) < 2:
         print("Uso:")
         print("  python exovision_ocr.py <cartella>       — estrae OCR")

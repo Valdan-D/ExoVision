@@ -18,8 +18,8 @@ try:
     YOLO_OK = True
 except ImportError:
     YOLO_OK = False
-    print("⚠️  ultralytics non trovato. Installa con: pip install ultralytics")
-    sys.exit(1)
+    # NB: niente sys.exit qui — vedi commento equivalente in exovision_ocr.py
+    # (importato anche da app.py per l'elaborazione in background).
 
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
@@ -260,6 +260,10 @@ def mostra_risultati(db_path: str = "exovision.db"):
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    if not YOLO_OK:
+        print("⚠️  ultralytics non trovato. Installa con: pip install ultralytics")
+        sys.exit(1)
+
     if len(sys.argv) < 2:
         print("Uso:")
         print("  python exovision_yolo.py <cartella>       — rileva oggetti")

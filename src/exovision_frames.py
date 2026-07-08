@@ -18,8 +18,8 @@ try:
     FFMPEG_OK = True
 except ImportError:
     FFMPEG_OK = False
-    print("⚠️  ffmpeg-python non trovato. Installa con: pip install ffmpeg-python")
-    sys.exit(1)
+    # NB: niente sys.exit qui — vedi commento equivalente in exovision_ocr.py
+    # (importato anche da app.py per l'elaborazione in background).
 
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
@@ -212,6 +212,10 @@ def processa_cartella(cartella: str, db_path: str = None):
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    if not FFMPEG_OK:
+        print("⚠️  ffmpeg-python non trovato. Installa con: pip install ffmpeg-python")
+        sys.exit(1)
+
     if len(sys.argv) < 2:
         print("Uso:")
         print("  python exovision_frames.py <cartella>       — estrae i keyframe")

@@ -20,8 +20,8 @@ try:
     WHISPER_OK = True
 except ImportError:
     WHISPER_OK = False
-    print("⚠️  faster-whisper non trovato. Installa con: pip install faster-whisper")
-    sys.exit(1)
+    # NB: niente sys.exit qui — vedi commento equivalente in exovision_ocr.py
+    # (importato anche da app.py per l'elaborazione in background).
 
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
@@ -241,6 +241,10 @@ def mostra_risultati(db_path: str = "exovision.db"):
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    if not WHISPER_OK:
+        print("⚠️  faster-whisper non trovato. Installa con: pip install faster-whisper")
+        sys.exit(1)
+
     if len(sys.argv) < 2:
         print("Uso:")
         print("  python exovision_whisper.py <cartella>       — trascrive l'audio")

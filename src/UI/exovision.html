@@ -1340,7 +1340,7 @@
           <td>${item.data || '<span class="muted">—</span>'}</td>
           <td>${dim}${sizeStr}</td>
           <td>${tagsHTML(item.tags)}</td>
-          <td>${item.file_esistente === false ? '<span class="badge badge-error">File mancante</span>' : (item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>')}</td>
+          <td>${item.file_esistente === false ? '<span class="badge badge-error">File mancante</span>' : (item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>')}${item.elaborazione_in_corso ? ' <span class="badge badge-info">⏳ Elaborazione IA…</span>' : ''}</td>
         </tr>`;
     }).join("") || `<tr><td colspan="7" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
     metaTableBody.querySelectorAll("tr[data-id]").forEach(tr => {
@@ -1356,8 +1356,20 @@
     return out;
   }
 
-  async function loadMetaTable() {
-    metaTableBody.innerHTML = skeletonRowsHTML(7);
+  let metaPollTimer = null;
+
+  // Finché ci sono file con OCR/YOLO/frame/trascrizione ancora in corso in
+  // background (avviati da /api/import), ricarica periodicamente la tabella
+  // per far sparire da sola l'etichetta "Elaborazione IA…" a fine lavoro.
+  function scheduleMetaPollIfNeeded() {
+    clearTimeout(metaPollTimer);
+    if (metaData.some(d => d.elaborazione_in_corso)) {
+      metaPollTimer = setTimeout(() => refreshMetaData(false), 3000);
+    }
+  }
+
+  async function refreshMetaData(showSkeleton) {
+    if (showSkeleton) metaTableBody.innerHTML = skeletonRowsHTML(7);
     try {
       const res = await fetch("/api/files?limit=500");
       if (!res.ok) {
@@ -1368,9 +1380,14 @@
       const data = await res.json();
       metaData = data.results;
       renderMetaTable();
+      scheduleMetaPollIfNeeded();
     } catch (e) {
       metaTableBody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:20px;">Errore nel caricamento.</td></tr>`;
     }
+  }
+
+  async function loadMetaTable() {
+    await refreshMetaData(true);
   }
 
   metaSearchInput.addEventListener("input", renderMetaTable);
