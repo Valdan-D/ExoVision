@@ -23,6 +23,12 @@ except ImportError:
     # NB: niente sys.exit qui — vedi commento equivalente in exovision_ocr.py
     # (importato anche da app.py per l'elaborazione in background).
 
+try:
+    import ffmpeg
+    FFMPEG_OK = True
+except ImportError:
+    FFMPEG_OK = False
+
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
 
@@ -96,11 +102,30 @@ def inserisci_trascrizione(conn: sqlite3.Connection, file_id: int, testo, lingua
 
 # ─── Trascrizione ─────────────────────────────────────────────────────────────
 
+def _ha_traccia_audio(path: str) -> bool:
+    """
+    Controlla se il video ha almeno una traccia audio prima di passarlo a
+    faster-whisper: senza traccia audio (es. video muti o con solo un flusso
+    dati/timecode) la libreria va in errore interno ("tuple index out of
+    range") invece di restituire un risultato vuoto pulito.
+    """
+    if not FFMPEG_OK:
+        return True  # in dubbio, prova comunque a trascrivere
+    try:
+        info = ffmpeg.probe(path)
+        return any(s.get("codec_type") == "audio" for s in info.get("streams", []))
+    except Exception:
+        return True
+
+
 def estrai_testo(model: WhisperModel, path: str):
     """
     Trascrive l'audio di un video con faster-whisper.
     Restituisce (testo, lingua_rilevata, confidenza_media) oppure (None, lingua, None).
     """
+    if not _ha_traccia_audio(path):
+        return None, None, None
+
     try:
         segments, info = model.transcribe(path, language=LINGUA, vad_filter=True)
 

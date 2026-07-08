@@ -94,12 +94,39 @@ def inserisci_frame(conn: sqlite3.Connection, file_id: int, frames: list):
 
 # ─── Estrazione keyframe ──────────────────────────────────────────────────────
 
+def _estrai_frame_singolo(path: str, cartella_out: Path, file_id: int, video_stem: str, timestamp: float = 1.0):
+    """
+    Estrae un singolo frame a un timestamp fisso — usato come fallback quando
+    la scene detection non trova alcun taglio di scena (comunissimo nei video
+    brevi a piano continuo, es. b-roll: senza questo fallback quei video non
+    avrebbero mai un'anteprima statica in UI).
+    """
+    out_path = cartella_out / f"fr-{file_id}-0-{video_stem}.jpg"
+    try:
+        (
+            ffmpeg
+            .input(path, ss=timestamp)
+            .output(str(out_path), vframes=1)
+            .run(capture_stdout=True, capture_stderr=True, overwrite_output=True)
+        )
+    except ffmpeg.Error as e:
+        stderr = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+        print(f"  ⚠️  Errore estrazione frame singolo su {path}: {stderr.splitlines()[-1] if stderr else ''}")
+        return None
+
+    if not out_path.exists():
+        return None
+    return {"path_frame": str(out_path), "timestamp_sec": round(timestamp, 2)}
+
+
 def estrai_keyframe(path: str, cartella_out: Path, file_id: int, video_stem: str) -> list:
     """
     Estrae i keyframe di un video con scene detection ffmpeg.
     Salva i frame come <cartella_out>/fr-<file_id>-<n>-<video_stem>.jpg
     (il file_id evita collisioni tra video con lo stesso nome in cartelle diverse)
     e restituisce la lista {timestamp_sec, path_frame} nell'ordine di estrazione.
+    Se la scene detection non trova alcun taglio di scena (o fallisce), prova
+    a estrarre un singolo frame fisso come anteprima di riserva.
     """
     prefisso = f"fr-{file_id}-"
     pattern  = str(cartella_out / f"{prefisso}%d-{video_stem}.jpg")
@@ -117,7 +144,8 @@ def estrai_keyframe(path: str, cartella_out: Path, file_id: int, video_stem: str
     except ffmpeg.Error as e:
         stderr = e.stderr.decode(errors="ignore") if e.stderr else str(e)
         print(f"  ⚠️  Errore ffmpeg su {path}: {stderr.splitlines()[-1] if stderr else ''}")
-        return []
+        fallback = _estrai_frame_singolo(path, cartella_out, file_id, video_stem)
+        return [fallback] if fallback else []
 
     timestamp = [float(m) for m in _PTS_RE.findall(err)]
 
@@ -131,7 +159,11 @@ def estrai_keyframe(path: str, cartella_out: Path, file_id: int, video_stem: str
             f"  ⚠️  Mismatch su {path}: {len(frame_paths)} frame scritti "
             f"vs {len(timestamp)} timestamp letti da ffmpeg — scarto il risultato"
         )
-        return []
+        frame_paths = []
+
+    if not frame_paths:
+        fallback = _estrai_frame_singolo(path, cartella_out, file_id, video_stem)
+        return [fallback] if fallback else []
 
     return [
         {"path_frame": str(fp), "timestamp_sec": round(ts, 2)}

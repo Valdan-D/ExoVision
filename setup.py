@@ -157,6 +157,8 @@ def verifica_import():
         ("flask",          "flask"),
         ("ultralytics",    "ultralytics"),
         ("faster_whisper", "faster-whisper"),
+        ("transformers",   "transformers"),
+        ("torch",          "torch"),
     ]
 
     tutti_ok = True

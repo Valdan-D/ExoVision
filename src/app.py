@@ -19,6 +19,7 @@ import exovision_ocr as ocr_pipeline
 import exovision_yolo as yolo_pipeline
 import exovision_frames as frames_pipeline
 import exovision_whisper as whisper_pipeline
+import exovision_caption as caption_pipeline
 
 app = Flask(__name__, static_folder="UI", static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB per richiesta di import
@@ -59,6 +60,8 @@ _model_lock  = threading.Lock()
 _ocr_reader  = None
 _yolo_model  = None
 _whisper_model = None
+_caption_model     = None
+_caption_processor = None
 
 def _get_ocr_reader():
     global _ocr_reader
@@ -86,6 +89,15 @@ def _get_whisper_model():
                 )
     return _whisper_model
 
+def _get_caption_model_e_processor():
+    global _caption_model, _caption_processor
+    if _caption_model is None and caption_pipeline.CAPTION_OK:
+        with _model_lock:
+            if _caption_model is None:
+                _caption_processor = caption_pipeline.BlipProcessor.from_pretrained(caption_pipeline.MODELLO)
+                _caption_model = caption_pipeline.BlipForConditionalGeneration.from_pretrained(caption_pipeline.MODELLO)
+    return _caption_model, _caption_processor
+
 
 _in_progress_lock = threading.Lock()
 _in_progress_ids  = set()
@@ -95,20 +107,22 @@ def _file_in_elaborazione(file_id: int) -> bool:
         return file_id in _in_progress_ids
 
 
-def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bool, has_trascrizione: bool) -> str:
+def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bool,
+                       has_trascrizione: bool, has_didascalia: bool = False) -> str:
     """
-    Riassume lo stato di OCR/YOLO (foto) o frame/trascrizione (video) in
-    un'unica etichetta, contando solo gli step per cui la libreria richiesta
-    è disponibile su questa macchina — altrimenti un video resterebbe per
-    sempre "parziale" se ad es. faster-whisper non è installato, anche dopo
-    aver rielaborato tutto il possibile.
+    Riassume lo stato di OCR/YOLO/didascalia (foto) o frame/trascrizione (video)
+    in un'unica etichetta, contando solo gli step per cui la libreria richiesta
+    è disponibile su questa macchina — altrimenti un file resterebbe per
+    sempre "parziale" se ad es. faster-whisper o transformers non sono
+    installati, anche dopo aver rielaborato tutto il possibile.
     Valori: "non_disponibile" (nessuno step eseguibile qui), "non_elaborato",
     "parziale", "elaborato".
     """
     if tipo == "foto":
         richiesti = []
-        if ocr_pipeline.EASYOCR_OK:  richiesti.append(has_ocr)
-        if yolo_pipeline.YOLO_OK:    richiesti.append(has_oggetti)
+        if ocr_pipeline.EASYOCR_OK:      richiesti.append(has_ocr)
+        if yolo_pipeline.YOLO_OK:        richiesti.append(has_oggetti)
+        if caption_pipeline.CAPTION_OK:  richiesti.append(has_didascalia)
     else:
         richiesti = []
         if frames_pipeline.FFMPEG_OK:      richiesti.append(has_frame)
@@ -126,8 +140,9 @@ def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bo
 
 def _post_process_file(file_id: int, path: str, tipo: str):
     """
-    Esegue OCR+YOLO (foto) o keyframe+trascrizione (video) su un singolo file
-    appena importato. Girato in un thread di background da /api/import.
+    Esegue OCR+YOLO+didascalia (foto) o keyframe+trascrizione (video) su un
+    singolo file appena importato. Girato in un thread di background da
+    /api/import.
     """
     with _in_progress_lock:
         _in_progress_ids.add(file_id)
@@ -153,6 +168,15 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                     yolo_pipeline.inserisci_oggetti(conn, file_id, oggetti)
                 except Exception as e:
                     print(f"⚠️  Errore YOLO in background su file {file_id}: {e}")
+
+            if caption_pipeline.CAPTION_OK:
+                try:
+                    model, processor = _get_caption_model_e_processor()
+                    testo = caption_pipeline.genera_didascalia(model, processor, path)
+                    caption_pipeline.init_tabella_didascalie(conn)
+                    caption_pipeline.inserisci_didascalia(conn, file_id, testo)
+                except Exception as e:
+                    print(f"⚠️  Errore didascalia in background su file {file_id}: {e}")
 
         else:  # video
             if frames_pipeline.FFMPEG_OK:
@@ -274,6 +298,14 @@ def _ensure_schema(conn: sqlite3.Connection):
             confidenza       REAL,
             data_estrazione  TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS didascalie (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id          INTEGER NOT NULL REFERENCES files(id),
+            testo            TEXT,
+            lingua           TEXT,
+            data_estrazione  TEXT
+        );
     """)
     conn.commit()
 
@@ -377,9 +409,9 @@ def search():
 @app.route("/api/file/<int:file_id>")
 def file_detail(file_id):
     """
-    Dettaglio completo di un file: metadati, OCR, trascrizione audio, oggetti rilevati.
+    Dettaglio completo di un file: metadati, OCR, trascrizione audio, didascalia IA, oggetti rilevati.
     Risposta JSON:
-      { file, metadati, ocr, trascrizione, oggetti, simili }
+      { file, metadati, ocr, trascrizione, didascalia, oggetti, simili }
     """
     if not db_ready():
         abort(404, description="Database non ancora inizializzato.")
@@ -416,6 +448,11 @@ def file_detail(file_id):
             "SELECT testo, lingua, confidenza FROM trascrizioni WHERE file_id = ?", (file_id,)
         ).fetchone()
 
+        # Didascalia generata dall'IA (foto) — distinta dalla descrizione manuale in files.descrizione
+        didascalia = conn.execute(
+            "SELECT testo, lingua FROM didascalie WHERE file_id = ?", (file_id,)
+        ).fetchone()
+
         # Oggetti rilevati
         oggetti = conn.execute("""
             SELECT oggetto, confidenza, bbox_x1, bbox_y1, bbox_x2, bbox_y2
@@ -448,6 +485,10 @@ def file_detail(file_id):
                 "testo":      trascrizione["testo"] if trascrizione else None,
                 "lingua":     trascrizione["lingua"] if trascrizione else None,
                 "confidenza": trascrizione["confidenza"] if trascrizione else None,
+            },
+            "didascalia": {
+                "testo":  didascalia["testo"] if didascalia else None,
+                "lingua": didascalia["lingua"] if didascalia else None,
             },
             "oggetti": [dict(o) for o in oggetti],
             "simili": [
@@ -500,7 +541,8 @@ def file_list():
                 EXISTS(SELECT 1 FROM ocr WHERE ocr.file_id = f.id)             AS has_ocr,
                 EXISTS(SELECT 1 FROM oggetti WHERE oggetti.file_id = f.id)     AS has_oggetti,
                 EXISTS(SELECT 1 FROM frame WHERE frame.file_id = f.id)        AS has_frame,
-                EXISTS(SELECT 1 FROM trascrizioni WHERE trascrizioni.file_id = f.id) AS has_trascrizione
+                EXISTS(SELECT 1 FROM trascrizioni WHERE trascrizioni.file_id = f.id) AS has_trascrizione,
+                EXISTS(SELECT 1 FROM didascalie WHERE didascalie.file_id = f.id)   AS has_didascalia
             FROM files f
             LEFT JOIN metadati_foto mf ON f.id = mf.file_id
             LEFT JOIN oggetti og        ON f.id = og.file_id AND og.confidenza >= 0.5
@@ -526,7 +568,8 @@ def file_list():
                     "elaborazione_in_corso": _file_in_elaborazione(row["id"]),
                     "ia_stato":          _calcola_ia_stato(
                                              row["tipo"], bool(row["has_ocr"]), bool(row["has_oggetti"]),
-                                             bool(row["has_frame"]), bool(row["has_trascrizione"])
+                                             bool(row["has_frame"]), bool(row["has_trascrizione"]),
+                                             bool(row["has_didascalia"])
                                          ),
                     "anteprima":         f"/api/preview/{row['id']}",
                     "dimensione_bytes":  row["dimensione_bytes"],
@@ -913,7 +956,8 @@ def backlog_files():
                 EXISTS(SELECT 1 FROM ocr WHERE ocr.file_id = f.id)             AS has_ocr,
                 EXISTS(SELECT 1 FROM oggetti WHERE oggetti.file_id = f.id)     AS has_oggetti,
                 EXISTS(SELECT 1 FROM frame WHERE frame.file_id = f.id)        AS has_frame,
-                EXISTS(SELECT 1 FROM trascrizioni WHERE trascrizioni.file_id = f.id) AS has_trascrizione
+                EXISTS(SELECT 1 FROM trascrizioni WHERE trascrizioni.file_id = f.id) AS has_trascrizione,
+                EXISTS(SELECT 1 FROM didascalie WHERE didascalie.file_id = f.id)   AS has_didascalia
             FROM files f
         """).fetchall()
 
@@ -922,7 +966,8 @@ def backlog_files():
             for row in rows
             if _calcola_ia_stato(
                 row["tipo"], bool(row["has_ocr"]), bool(row["has_oggetti"]),
-                bool(row["has_frame"]), bool(row["has_trascrizione"])
+                bool(row["has_frame"]), bool(row["has_trascrizione"]),
+                bool(row["has_didascalia"])
             ) == "non_elaborato"
         ]
         return jsonify({"totale": len(arretrati), "results": arretrati})
@@ -933,8 +978,8 @@ def backlog_files():
 @app.route("/api/file/<int:id>/reprocess", methods=["POST"])
 def reprocess_file(id):
     """
-    (Ri)avvia OCR/YOLO (foto) o frame/trascrizione (video) per un file
-    specifico, in background — sia per i file mai elaborati (vedi
+    (Ri)avvia OCR/YOLO/didascalia (foto) o frame/trascrizione (video) per un
+    file specifico, in background — sia per i file mai elaborati (vedi
     /api/backlog) sia per rielaborare un file già processato in precedenza
     (es. dopo aver installato una libreria che prima mancava).
     Le righe già presenti per quel file nelle tabelle coinvolte vengono
@@ -952,7 +997,7 @@ def reprocess_file(id):
             abort(404, description="Il file non esiste più su disco.")
 
         cursor = conn.cursor()
-        tabelle = ("ocr", "oggetti") if tipo == "foto" else ("frame", "trascrizioni")
+        tabelle = ("ocr", "oggetti", "didascalie") if tipo == "foto" else ("frame", "trascrizioni")
         for tabella in tabelle:
             cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
         conn.commit()

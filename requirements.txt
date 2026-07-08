@@ -22,3 +22,7 @@ ultralytics
 
 # Trascrizione audio video
 faster-whisper
+
+# Didascalia automatica foto (image captioning)
+transformers
+torch

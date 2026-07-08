@@ -1036,6 +1036,7 @@
     const meta = data.metadati || {};
     const ocr = data.ocr || {};
     const trascrizione = data.trascrizione || {};
+    const didascalia = data.didascalia || {};
     const isVideo = f.tipo === "video";
     const dataVisibile = meta.data_creazione || "—";
     const sizeVisibile = f.dimensione_file ? fmtSize(f.dimensione_file) : "—";
@@ -1045,6 +1046,14 @@
     const descrizioneBlock = descrizioneVal
       ? `<div class="obs-description">${escapeHtml(descrizioneVal)}</div>`
       : `<div class="obs-description empty">Nessuna descrizione — clicca sulla matita per aggiungerne una.</div>`;
+
+    // Didascalia generata dall'IA (BLIP, in inglese) — solo foto, distinta dalla descrizione manuale sopra
+    const didascaliaBlock = (!isVideo && didascalia.testo)
+      ? `<div class="obs-description" style="font-style:italic;">
+           <span class="subtle" style="display:block;font-style:normal;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Didascalia IA (EN)</span>
+           ${escapeHtml(didascalia.testo)}
+         </div>`
+      : "";
 
     let metaRows = "";
     if (meta.larghezza && meta.altezza) metaRows += `<div class="meta-row"><span>Risoluzione</span><span>${meta.larghezza}x${meta.altezza}</span></div>`;
@@ -1073,6 +1082,7 @@
             </div>
             ${!f.metadati_completi ? '<span class="badge badge-warning" style="display:inline-block;margin-bottom:10px;">Metadati incompleti</span>' : ""}
             ${descrizioneBlock}
+            ${didascaliaBlock}
             <div class="meta-row"><span>Tipo</span><span>${isVideo ? "Video" : "Immagine"}</span></div>
             <div class="meta-row"><span>Data</span><span>${dataVisibile}</span></div>
             <div class="meta-row"><span>Dimensione file</span><span>${sizeVisibile}</span></div>
@@ -1341,7 +1351,7 @@
       const sizeStr = item.dimensione_bytes
         ? " · " + (item.dimensione_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
       const IA_BADGE = {
-        elaborato:        '<span class="badge badge-ok" title="OCR/oggetti (o frame/trascrizione) già eseguiti">IA ✓</span>',
+        elaborato:        '<span class="badge badge-ok" title="OCR/oggetti/didascalia (o frame/trascrizione) già eseguiti">IA ✓</span>',
         parziale:         '<span class="badge badge-warning" title="Solo alcuni step IA sono stati eseguiti">IA parziale</span>',
         non_elaborato:    '<span class="badge badge-warning" title="Nessuno step IA è mai stato eseguito su questo file">IA: non elaborato</span>',
         non_disponibile:  ""
@@ -1358,7 +1368,7 @@
           <td>${dim}${sizeStr}</td>
           <td>${tagsHTML(item.tags)}</td>
           <td>${item.file_esistente === false ? '<span class="badge badge-error">File mancante</span>' : (item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>')} ${iaBadge}</td>
-          <td>${item.file_esistente === false || item.elaborazione_in_corso ? "" : `<button class="btn secondary reprocess-btn" data-id="${item.id}" title="Rielabora OCR/oggetti (o frame/trascrizione)" style="padding:4px 10px;font-size:.78rem;">🔄 Rielabora</button>`}</td>
+          <td>${item.file_esistente === false || item.elaborazione_in_corso ? "" : `<button class="btn secondary reprocess-btn" data-id="${item.id}" title="Rielabora OCR/oggetti/didascalia (o frame/trascrizione)" style="padding:4px 10px;font-size:.78rem;">🔄 Rielabora</button>`}</td>
         </tr>`;
     }).join("") || `<tr><td colspan="8" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
     metaTableBody.querySelectorAll(".reprocess-btn").forEach(btn => {
@@ -1518,7 +1528,7 @@
 
   function renderBacklogList(items) {
     backlogSummary.textContent = items.length
-      ? `${items.length} file mai elaborati con OCR/oggetti (foto) o frame/trascrizione (video)`
+      ? `${items.length} file mai elaborati con OCR/oggetti/didascalia (foto) o frame/trascrizione (video)`
       : "Nessun file arretrato: tutto è già stato elaborato.";
     backlogReprocessAllBtn.classList.toggle("hidden", items.length === 0);
     backlogList.innerHTML = items.map(item => `

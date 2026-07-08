@@ -21,6 +21,9 @@
     "lingua": null,
     "confidenza_minima": 0.4
   },
+  "caption": {
+    "modello": "Salesforce/blip-image-captioning-base"
+  },
   "ricerca": {
     "soglia_similarita": 0.75,
     "modalita": "locale"
