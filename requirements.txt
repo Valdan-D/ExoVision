@@ -26,3 +26,8 @@ faster-whisper
 # Didascalia automatica foto (image captioning)
 transformers
 torch
+
+# Computer vision: riconoscimento facciale ed embedding semantico (src/computer_vision)
+opencv-python
+deepface
+moviepy

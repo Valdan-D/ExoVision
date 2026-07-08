@@ -1,90 +1,101 @@
 """
-Modulo di gestione del database vettoriale ChromaDB.
+Modulo di gestione del database vettoriale ChromaDB (Versione Batch a Doppia Collezione).
 
-Astrae la persistenza degli embedding SigLIP su disco, con collezioni separate
-per foto e frame video, e la ricerca ibrida (similarità vettoriale + filtro
-sui tag di object detection rilevati da YOLO).
+Questo file astrae l'interfaccia di ChromaDB, gestendo due collezioni distinte:
+1. Galleria Semantica (SigLIP + Tag YOLO) per la ricerca concettuale e testuale.
+2. Vettori Volti (ArcFace) per il riconoscimento biometrico istantaneo e dinamico.
 """
 
-from pathlib import Path
-
 import chromadb
-
-_DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "chroma_db"
-
-COLLEZIONI = {
-    "foto": "foto_embeddings",
-    "video": "video_embeddings",
-}
 
 
 class ExoVisionDB:
     """
-    Gestisce la connessione persistente a ChromaDB e le operazioni di
-    indicizzazione e ricerca ibrida in modalità batch.
+    Classe per la gestione e l'interfacciamento con il database vettoriale ChromaDB.
+
+    Gestisce l'inserimento multi-layer e la ricerca su due collezioni separate
+    per garantire la massima flessibilità senza rieseguire l'ingestion.
     """
 
-    def __init__(self, path=None):
+    def __init__(self, path="./exovision_vector_db"):
         """
-        Inizializza la connessione persistente a ChromaDB e recupera o crea
-        le collezioni per foto e video.
+        Inizializza la connessione a ChromaDB e istanzia le due collezioni separate.
 
         Args:
-            path (str, optional): Percorso locale dei file del database
-                vettoriale. Default: <root progetto>/data/chroma_db.
+            path (str): Percorso locale in cui salvare i file del database vettoriale.
         """
-        path = path or str(_DATA_PATH)
-        print("\n[-] Connessione a ChromaDB locale...")
+        print("\n[-] Connessione a ChromaDB locale (Doppia Collezione)...")
         self.client_chroma = chromadb.PersistentClient(path=path)
 
-        # Uso della similarità coseno ottimale per SigLIP
-        self.collezioni = {
-            tipo: self.client_chroma.get_or_create_collection(
-                name=nome, metadata={"hnsw:space": "cosine"}
-            )
-            for tipo, nome in COLLEZIONI.items()
-        }
-        for tipo, collezione in self.collezioni.items():
-            print(f"[+] Collegato alla collezione '{collezione.name}' ({tipo}) | Record attuali: {collezione.count()}")
+        # 1. COLLEZIONE SEMANTICA (SigLIP)
+        self.coll_semantica = self.client_chroma.get_or_create_collection(
+            name="galleria_semantica",
+            metadata={"hnsw:space": "cosine"}
+        )
 
-    def aggiungi_batch(self, tipo, lista_ids, lista_vettori, lista_metadatas):
-        """
-        Salva un intero pacchetto di record (batch) in un colpo solo dentro
-        la collezione indicata.
+        # 2. COLLEZIONE VOLTI (ArcFace)
+        self.coll_volti = self.client_chroma.get_or_create_collection(
+            name="vettori_volti",
+            # ArcFace lavora divinamente con la similarità coseno
+            metadata={"hnsw:space": "cosine"}
+        )
 
-        Args:
-            tipo (str): "foto" o "video" — determina la collezione di destinazione.
-            lista_ids (list[str]): Lista di identificativi univoci.
-            lista_vettori (list[list[float]]): Lista di vettori generati da SigLIP.
-            lista_metadatas (list[dict]): Lista di dizionari coi metadati arricchiti (didascalie + tag YOLO).
-        """
-        self.collezioni[tipo].add(
+        print(
+            f"[+] Collegato a 'galleria_semantica' | Record attuali: {self.coll_semantica.count()}")
+        print(
+            f"[+] Collegato a 'vettori_volti'      | Record attuali: {self.coll_volti.count()}")
+
+    def aggiungi_batch_semantica(self, lista_ids, lista_vettori, lista_metadatas):
+        """Salva i vettori globali SigLIP e i tag YOLO nella collezione semantica"""
+        if not lista_ids:
+            return
+        self.coll_semantica.add(
             ids=lista_ids,
             embeddings=lista_vettori,
             metadatas=lista_metadatas
         )
 
-    def cerca_ibrido(self, tipo, vettore_query, tag_filtro=None, n_risultati=3):
+    def aggiungi_batch_volti(self, lista_ids, lista_vettori, lista_metadatas):
+        """Salva i vettori facciali estratti da RetinaFace/ArcFace nella collezione volti"""
+        if not lista_ids:
+            return
+        self.coll_volti.add(
+            ids=lista_ids,
+            embeddings=lista_vettori,
+            metadatas=lista_metadatas
+        )
+
+    def cerca_ibrido(self, vettore_query, tag_filtro=None, n_risultati=3):
         """
         Esegue una ricerca semantica combinando la vicinanza vettoriale con un filtro logico.
-
-        Args:
-            tipo (str): "foto" o "video" — collezione su cui cercare.
-            vettore_query (list): Il vettore del testo cercato.
-            tag_filtro (str, optional): Tag di object detection da imporre come vincolo (es. "person").
-            n_risultati (int): Numero massimo di corrispondenze da restituire.
-        Returns:
-            dict: Dizionario standard di ChromaDB contenente i risultati della query.
+        (Cerca all'interno della collezione galleria_semantica)
         """
-        condizione_filtro = None
         if tag_filtro:
             tag_pulito = tag_filtro.lower().strip()
             condizione_filtro = {f"yolo_has_{tag_pulito}": 1}
+        else:
+            condizione_filtro = None
 
-        print(f"[Ricerca DB] Filtro applicato su ChromaDB ({tipo}): {condizione_filtro}")
+        print(
+            f"[Ricerca DB Semantica] Filtro applicato su ChromaDB: {condizione_filtro}")
 
-        return self.collezioni[tipo].query(
+        return self.coll_semantica.query(
             query_embeddings=[vettore_query],
             n_results=n_risultati,
             where=condizione_filtro
+        )
+
+    def cerca_volto_simile(self, vettore_volto_query, n_risultati=5):
+        """
+        Interroga direttamente la collezione dei volti per trovare corrispondenze biometriche.
+        Questo metodo rende istantanea la ricerca di NUOVE persone senza rifare l'ingestion.
+
+        Args:
+            vettore_volto_query (list): L'embedding ArcFace del volto da cercare.
+            n_risultati (int): Numero di volti simili da restituire.
+        """
+        print(f"[Ricerca DB Volti] Confronte biometrico vettoriale in corso...")
+        return self.coll_volti.query(
+            query_embeddings=[vettore_volto_query],
+            n_results=n_risultati
         )
