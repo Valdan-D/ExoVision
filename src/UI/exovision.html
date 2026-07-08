@@ -714,6 +714,14 @@
           <input type="checkbox" id="metaIncompleteOnly"> Solo metadati incompleti
         </label>
         <span class="subtle" id="metaCount"></span>
+        <button class="btn secondary" id="checkGhostBtn" style="margin-left:auto;">Rileva file mancanti</button>
+      </div>
+      <div id="ghostPanel" class="hidden" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;background:var(--bg-elevated);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">
+          <strong id="ghostSummary" style="font-size:.9rem;"></strong>
+          <button class="btn secondary" id="ghostDeleteAllBtn" style="padding:6px 12px;font-size:.8rem;">Elimina tutti dal database</button>
+        </div>
+        <div id="ghostList"></div>
       </div>
       <div style="overflow-x:auto;">
         <table class="meta-table">
@@ -1332,7 +1340,7 @@
           <td>${item.data || '<span class="muted">—</span>'}</td>
           <td>${dim}${sizeStr}</td>
           <td>${tagsHTML(item.tags)}</td>
-          <td>${item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>'}</td>
+          <td>${item.file_esistente === false ? '<span class="badge badge-error">File mancante</span>' : (item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>')}</td>
         </tr>`;
     }).join("") || `<tr><td colspan="7" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
     metaTableBody.querySelectorAll("tr[data-id]").forEach(tr => {
@@ -1367,6 +1375,82 @@
 
   metaSearchInput.addEventListener("input", renderMetaTable);
   metaIncompleteOnly.addEventListener("change", renderMetaTable);
+
+  /* ---------- File fantasma (rilevamento + eliminazione manuale) ---------- */
+  const checkGhostBtn     = document.getElementById("checkGhostBtn");
+  const ghostPanel        = document.getElementById("ghostPanel");
+  const ghostSummary      = document.getElementById("ghostSummary");
+  const ghostList         = document.getElementById("ghostList");
+  const ghostDeleteAllBtn = document.getElementById("ghostDeleteAllBtn");
+
+  async function deleteFileRecord(id) {
+    const res = await fetch(`/api/file/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.errore || "Eliminazione fallita.");
+    }
+  }
+
+  function renderGhostList(items) {
+    ghostSummary.textContent = items.length
+      ? `${items.length} file mancanti su disco`
+      : "Nessun file mancante trovato.";
+    ghostDeleteAllBtn.classList.toggle("hidden", items.length === 0);
+    ghostList.innerHTML = items.map(item => `
+      <div class="meta-row" data-ghost-id="${item.id}">
+        <span>${escapeHtml(item.nome_file)} <span class="subtle">(${escapeHtml(item.path)})</span></span>
+        <button class="btn secondary ghost-del-btn" data-id="${item.id}" style="padding:4px 10px;font-size:.78rem;">Elimina dal database</button>
+      </div>
+    `).join("") || "";
+    ghostList.querySelectorAll(".ghost-del-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          await deleteFileRecord(parseInt(btn.dataset.id, 10));
+          showToast("Record eliminato dal database");
+          await checkGhostFiles();
+          loadMetaTable();
+        } catch (e) {
+          showToast(e.message);
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  async function checkGhostFiles() {
+    checkGhostBtn.disabled = true;
+    try {
+      const res = await fetch("/api/ghost");
+      const data = await res.json();
+      ghostPanel.classList.remove("hidden");
+      renderGhostList(data.results || []);
+    } catch (e) {
+      ghostPanel.classList.remove("hidden");
+      ghostSummary.textContent = "Errore nel rilevamento dei file mancanti.";
+      ghostList.innerHTML = "";
+      ghostDeleteAllBtn.classList.add("hidden");
+    } finally {
+      checkGhostBtn.disabled = false;
+    }
+  }
+
+  checkGhostBtn.addEventListener("click", checkGhostFiles);
+
+  ghostDeleteAllBtn.addEventListener("click", async () => {
+    const ids = Array.from(ghostList.querySelectorAll(".ghost-del-btn")).map(b => parseInt(b.dataset.id, 10));
+    if (!ids.length) return;
+    if (!confirm(`Eliminare definitivamente ${ids.length} record dal database? L'operazione non è reversibile.`)) return;
+    ghostDeleteAllBtn.disabled = true;
+    let errori = 0;
+    for (const id of ids) {
+      try { await deleteFileRecord(id); } catch (e) { errori++; }
+    }
+    ghostDeleteAllBtn.disabled = false;
+    showToast(errori ? `Eliminati ${ids.length - errori} su ${ids.length} (${errori} errori)` : `Eliminati ${ids.length} record`);
+    await checkGhostFiles();
+    loadMetaTable();
+  });
 
   /* ============================================================
      IMPORTA

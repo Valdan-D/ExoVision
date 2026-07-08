@@ -380,6 +380,7 @@ def file_list():
                     "tipo":              row["tipo"],
                     "path":              row["path"],
                     "metadati_completi": bool(row["metadati_completi"]),
+                    "file_esistente":    Path(row["path"]).exists(),
                     "anteprima":         f"/api/preview/{row['id']}",
                     "dimensione_bytes":  row["dimensione_bytes"],
                     "data":              row["data_scatto"] or (row["data_modifica"] or "").split("T")[0] or None,
@@ -685,6 +686,58 @@ def update_file_metadata(id):
         return jsonify({"errore": f"Errore del database: {str(e)}"}), 500
     finally:
         conn.close()
+
+
+# ── API — File fantasma (record il cui file è sparito dal disco) ──────────────
+
+@app.route("/api/ghost")
+def ghost_files():
+    """
+    Scansiona l'archivio e segnala i record il cui file non esiste più su disco
+    (es. cancellato manualmente dalla cartella). Non modifica il database:
+    solo rilevamento, la rimozione è un'azione esplicita separata
+    (DELETE /api/file/<id>).
+    """
+    if not db_ready():
+        return jsonify({"totale": 0, "results": []})
+
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT id, nome_file, tipo, path FROM files").fetchall()
+        mancanti = [dict(row) for row in rows if not Path(row["path"]).exists()]
+        return jsonify({"totale": len(mancanti), "results": mancanti})
+    finally:
+        conn.close()
+
+
+@app.route("/api/file/<int:id>", methods=["DELETE"])
+def delete_file(id):
+    """
+    Elimina definitivamente un record dal database (e tutte le righe collegate
+    nelle tabelle metadati_foto/metadati_video/ocr/oggetti/frame/trascrizioni).
+    Non tocca il file su disco: pensato per ripulire i "file fantasma" il cui
+    file è già sparito, non per cancellare file ancora presenti in archivio.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        file_row = cursor.execute("SELECT id FROM files WHERE id = ?", (id,)).fetchone()
+        if not file_row:
+            abort(404, description="File non trovato nel database.")
+
+        for tabella in ("metadati_foto", "metadati_video", "ocr", "oggetti", "frame", "trascrizioni"):
+            cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
+        cursor.execute("DELETE FROM files WHERE id = ?", (id,))
+
+        conn.commit()
+        return jsonify({"ok": True, "messaggio": "Record eliminato dal database."}), 200
+    except sqlite3.Error as e:
+        conn.rollback()
+        return jsonify({"errore": f"Errore del database: {str(e)}"}), 500
+    finally:
+        conn.close()
+
+
 # ── Gestione errori ───────────────────────────────────────────────────────────
 
 @app.errorhandler(404)
