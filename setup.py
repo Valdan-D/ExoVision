@@ -159,6 +159,10 @@ def verifica_import():
         ("faster_whisper", "faster-whisper"),
         ("transformers",   "transformers"),
         ("torch",          "torch"),
+        ("cv2",            "opencv-python"),
+        ("deepface",       "deepface"),
+        ("moviepy",        "moviepy"),
+        ("tf_keras",       "tf-keras"),
     ]
 
     tutti_ok = True

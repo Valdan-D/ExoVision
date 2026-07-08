@@ -31,3 +31,4 @@ torch
 opencv-python
 deepface
 moviepy
+tf-keras
