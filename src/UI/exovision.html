@@ -714,7 +714,15 @@
           <input type="checkbox" id="metaIncompleteOnly"> Solo metadati incompleti
         </label>
         <span class="subtle" id="metaCount"></span>
-        <button class="btn secondary" id="checkGhostBtn" style="margin-left:auto;">Rileva file mancanti</button>
+        <button class="btn secondary" id="checkBacklogBtn" style="margin-left:auto;">Rileva file mai elaborati</button>
+        <button class="btn secondary" id="checkGhostBtn">Rileva file mancanti</button>
+      </div>
+      <div id="backlogPanel" class="hidden" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;background:var(--bg-elevated);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">
+          <strong id="backlogSummary" style="font-size:.9rem;"></strong>
+          <button class="btn secondary" id="backlogReprocessAllBtn" style="padding:6px 12px;font-size:.8rem;">Rielabora tutti</button>
+        </div>
+        <div id="backlogList"></div>
       </div>
       <div id="ghostPanel" class="hidden" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;background:var(--bg-elevated);">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">
@@ -726,7 +734,7 @@
       <div style="overflow-x:auto;">
         <table class="meta-table">
           <thead>
-            <tr><th></th><th>Nome file</th><th>Cartella / evento</th><th>Data</th><th>Dimensioni</th><th>Tag</th><th>Stato</th></tr>
+            <tr><th></th><th>Nome file</th><th>Cartella / evento</th><th>Data</th><th>Dimensioni</th><th>Tag</th><th>Stato</th><th></th></tr>
           </thead>
           <tbody id="metaTableBody"></tbody>
         </table>
@@ -1332,6 +1340,15 @@
         : item.tipo === "video" ? "Video" : "—";
       const sizeStr = item.dimensione_bytes
         ? " · " + (item.dimensione_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
+      const IA_BADGE = {
+        elaborato:        '<span class="badge badge-ok" title="OCR/oggetti (o frame/trascrizione) già eseguiti">IA ✓</span>',
+        parziale:         '<span class="badge badge-warning" title="Solo alcuni step IA sono stati eseguiti">IA parziale</span>',
+        non_elaborato:    '<span class="badge badge-warning" title="Nessuno step IA è mai stato eseguito su questo file">IA: non elaborato</span>',
+        non_disponibile:  ""
+      };
+      const iaBadge = item.elaborazione_in_corso
+        ? '<span class="badge badge-info">⏳ Elaborazione IA…</span>'
+        : (IA_BADGE[item.ia_stato] || "");
       return `
         <tr data-id="${item.id}">
           <td><img class="thumb" src="${item.anteprima}" alt=""></td>
@@ -1340,9 +1357,24 @@
           <td>${item.data || '<span class="muted">—</span>'}</td>
           <td>${dim}${sizeStr}</td>
           <td>${tagsHTML(item.tags)}</td>
-          <td>${item.file_esistente === false ? '<span class="badge badge-error">File mancante</span>' : (item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>')}${item.elaborazione_in_corso ? ' <span class="badge badge-info">⏳ Elaborazione IA…</span>' : ''}</td>
+          <td>${item.file_esistente === false ? '<span class="badge badge-error">File mancante</span>' : (item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>')} ${iaBadge}</td>
+          <td>${item.file_esistente === false || item.elaborazione_in_corso ? "" : `<button class="btn secondary reprocess-btn" data-id="${item.id}" title="Rielabora OCR/oggetti (o frame/trascrizione)" style="padding:4px 10px;font-size:.78rem;">🔄 Rielabora</button>`}</td>
         </tr>`;
-    }).join("") || `<tr><td colspan="7" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
+    }).join("") || `<tr><td colspan="8" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
+    metaTableBody.querySelectorAll(".reprocess-btn").forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        btn.disabled = true;
+        try {
+          await reprocessFile(parseInt(btn.dataset.id, 10));
+          showToast("Elaborazione avviata in background");
+          refreshMetaData(false);
+        } catch (e) {
+          showToast(e.message);
+          btn.disabled = false;
+        }
+      });
+    });
     metaTableBody.querySelectorAll("tr[data-id]").forEach(tr => {
       tr.addEventListener("click", () => openDetail(parseInt(tr.dataset.id, 10)));
     });
@@ -1369,12 +1401,12 @@
   }
 
   async function refreshMetaData(showSkeleton) {
-    if (showSkeleton) metaTableBody.innerHTML = skeletonRowsHTML(7);
+    if (showSkeleton) metaTableBody.innerHTML = skeletonRowsHTML(8);
     try {
       const res = await fetch("/api/files?limit=500");
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        metaTableBody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:20px;">${escapeHtml(err.errore || "Errore nel caricamento.")}</td></tr>`;
+        metaTableBody.innerHTML = `<tr><td colspan="8" class="muted" style="padding:20px;">${escapeHtml(err.errore || "Errore nel caricamento.")}</td></tr>`;
         return;
       }
       const data = await res.json();
@@ -1382,7 +1414,7 @@
       renderMetaTable();
       scheduleMetaPollIfNeeded();
     } catch (e) {
-      metaTableBody.innerHTML = `<tr><td colspan="7" class="muted" style="padding:20px;">Errore nel caricamento.</td></tr>`;
+      metaTableBody.innerHTML = `<tr><td colspan="8" class="muted" style="padding:20px;">Errore nel caricamento.</td></tr>`;
     }
   }
 
@@ -1405,6 +1437,14 @@
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.errore || "Eliminazione fallita.");
+    }
+  }
+
+  async function reprocessFile(id) {
+    const res = await fetch(`/api/file/${id}/reprocess`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.errore || "Avvio elaborazione fallito.");
     }
   }
 
@@ -1466,6 +1506,71 @@
     ghostDeleteAllBtn.disabled = false;
     showToast(errori ? `Eliminati ${ids.length - errori} su ${ids.length} (${errori} errori)` : `Eliminati ${ids.length} record`);
     await checkGhostFiles();
+    loadMetaTable();
+  });
+
+  /* ---------- File mai elaborati da OCR/YOLO/frame/whisper (backlog) ---------- */
+  const checkBacklogBtn        = document.getElementById("checkBacklogBtn");
+  const backlogPanel           = document.getElementById("backlogPanel");
+  const backlogSummary         = document.getElementById("backlogSummary");
+  const backlogList            = document.getElementById("backlogList");
+  const backlogReprocessAllBtn = document.getElementById("backlogReprocessAllBtn");
+
+  function renderBacklogList(items) {
+    backlogSummary.textContent = items.length
+      ? `${items.length} file mai elaborati con OCR/oggetti (foto) o frame/trascrizione (video)`
+      : "Nessun file arretrato: tutto è già stato elaborato.";
+    backlogReprocessAllBtn.classList.toggle("hidden", items.length === 0);
+    backlogList.innerHTML = items.map(item => `
+      <div class="meta-row" data-backlog-id="${item.id}">
+        <span>${escapeHtml(item.nome_file)} <span class="subtle">(${item.tipo})</span></span>
+        <button class="btn secondary backlog-proc-btn" data-id="${item.id}" style="padding:4px 10px;font-size:.78rem;">🔄 Elabora ora</button>
+      </div>
+    `).join("") || "";
+    backlogList.querySelectorAll(".backlog-proc-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          await reprocessFile(parseInt(btn.dataset.id, 10));
+          showToast("Elaborazione avviata in background");
+          loadMetaTable();
+        } catch (e) {
+          showToast(e.message);
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  async function checkBacklogFiles() {
+    checkBacklogBtn.disabled = true;
+    try {
+      const res = await fetch("/api/backlog");
+      const data = await res.json();
+      backlogPanel.classList.remove("hidden");
+      renderBacklogList(data.results || []);
+    } catch (e) {
+      backlogPanel.classList.remove("hidden");
+      backlogSummary.textContent = "Errore nel rilevamento dei file arretrati.";
+      backlogList.innerHTML = "";
+      backlogReprocessAllBtn.classList.add("hidden");
+    } finally {
+      checkBacklogBtn.disabled = false;
+    }
+  }
+
+  checkBacklogBtn.addEventListener("click", checkBacklogFiles);
+
+  backlogReprocessAllBtn.addEventListener("click", async () => {
+    const ids = Array.from(backlogList.querySelectorAll(".backlog-proc-btn")).map(b => parseInt(b.dataset.id, 10));
+    if (!ids.length) return;
+    backlogReprocessAllBtn.disabled = true;
+    let errori = 0;
+    for (const id of ids) {
+      try { await reprocessFile(id); } catch (e) { errori++; }
+    }
+    backlogReprocessAllBtn.disabled = false;
+    showToast(errori ? `Avviati ${ids.length - errori} su ${ids.length} (${errori} errori)` : `Elaborazione avviata per ${ids.length} file`);
     loadMetaTable();
   });
 

@@ -94,6 +94,36 @@ def _file_in_elaborazione(file_id: int) -> bool:
     with _in_progress_lock:
         return file_id in _in_progress_ids
 
+
+def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bool, has_trascrizione: bool) -> str:
+    """
+    Riassume lo stato di OCR/YOLO (foto) o frame/trascrizione (video) in
+    un'unica etichetta, contando solo gli step per cui la libreria richiesta
+    è disponibile su questa macchina — altrimenti un video resterebbe per
+    sempre "parziale" se ad es. faster-whisper non è installato, anche dopo
+    aver rielaborato tutto il possibile.
+    Valori: "non_disponibile" (nessuno step eseguibile qui), "non_elaborato",
+    "parziale", "elaborato".
+    """
+    if tipo == "foto":
+        richiesti = []
+        if ocr_pipeline.EASYOCR_OK:  richiesti.append(has_ocr)
+        if yolo_pipeline.YOLO_OK:    richiesti.append(has_oggetti)
+    else:
+        richiesti = []
+        if frames_pipeline.FFMPEG_OK:      richiesti.append(has_frame)
+        if whisper_pipeline.WHISPER_OK:    richiesti.append(has_trascrizione)
+
+    if not richiesti:
+        return "non_disponibile"
+    fatti = sum(1 for r in richiesti if r)
+    if fatti == len(richiesti):
+        return "elaborato"
+    if fatti == 0:
+        return "non_elaborato"
+    return "parziale"
+
+
 def _post_process_file(file_id: int, path: str, tipo: str):
     """
     Esegue OCR+YOLO (foto) o keyframe+trascrizione (video) su un singolo file
@@ -466,7 +496,11 @@ def file_list():
                 f.id, f.nome_file, f.tipo, f.path, f.metadati_completi,
                 f.dimensione_bytes, f.data_modifica,
                 mf.larghezza, mf.altezza, mf.data_scatto,
-                GROUP_CONCAT(DISTINCT og.oggetto) AS tag_string
+                GROUP_CONCAT(DISTINCT og.oggetto) AS tag_string,
+                EXISTS(SELECT 1 FROM ocr WHERE ocr.file_id = f.id)             AS has_ocr,
+                EXISTS(SELECT 1 FROM oggetti WHERE oggetti.file_id = f.id)     AS has_oggetti,
+                EXISTS(SELECT 1 FROM frame WHERE frame.file_id = f.id)        AS has_frame,
+                EXISTS(SELECT 1 FROM trascrizioni WHERE trascrizioni.file_id = f.id) AS has_trascrizione
             FROM files f
             LEFT JOIN metadati_foto mf ON f.id = mf.file_id
             LEFT JOIN oggetti og        ON f.id = og.file_id AND og.confidenza >= 0.5
@@ -490,6 +524,10 @@ def file_list():
                     "metadati_completi":    bool(row["metadati_completi"]),
                     "file_esistente":       Path(row["path"]).exists(),
                     "elaborazione_in_corso": _file_in_elaborazione(row["id"]),
+                    "ia_stato":          _calcola_ia_stato(
+                                             row["tipo"], bool(row["has_ocr"]), bool(row["has_oggetti"]),
+                                             bool(row["has_frame"]), bool(row["has_trascrizione"])
+                                         ),
                     "anteprima":         f"/api/preview/{row['id']}",
                     "dimensione_bytes":  row["dimensione_bytes"],
                     "data":              row["data_scatto"] or (row["data_modifica"] or "").split("T")[0] or None,
@@ -851,6 +889,78 @@ def delete_file(id):
         return jsonify({"errore": f"Errore del database: {str(e)}"}), 500
     finally:
         conn.close()
+
+
+# ── API — Elaborazione IA arretrata / manuale (OCR/YOLO/frame/whisper) ────────
+
+@app.route("/api/backlog")
+def backlog_files():
+    """
+    Segnala i file mai passati da OCR/YOLO (foto) o frame/trascrizione (video)
+    — tipicamente quelli indicizzati prima che /api/import agganciasse
+    l'elaborazione in background, o importati mentre una libreria non era
+    installata. Non modifica il database: solo rilevamento, l'elaborazione
+    è un'azione esplicita separata (POST /api/file/<id>/reprocess).
+    """
+    if not db_ready():
+        return jsonify({"totale": 0, "results": []})
+
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT
+                f.id, f.nome_file, f.tipo,
+                EXISTS(SELECT 1 FROM ocr WHERE ocr.file_id = f.id)             AS has_ocr,
+                EXISTS(SELECT 1 FROM oggetti WHERE oggetti.file_id = f.id)     AS has_oggetti,
+                EXISTS(SELECT 1 FROM frame WHERE frame.file_id = f.id)        AS has_frame,
+                EXISTS(SELECT 1 FROM trascrizioni WHERE trascrizioni.file_id = f.id) AS has_trascrizione
+            FROM files f
+        """).fetchall()
+
+        arretrati = [
+            {"id": row["id"], "nome_file": row["nome_file"], "tipo": row["tipo"]}
+            for row in rows
+            if _calcola_ia_stato(
+                row["tipo"], bool(row["has_ocr"]), bool(row["has_oggetti"]),
+                bool(row["has_frame"]), bool(row["has_trascrizione"])
+            ) == "non_elaborato"
+        ]
+        return jsonify({"totale": len(arretrati), "results": arretrati})
+    finally:
+        conn.close()
+
+
+@app.route("/api/file/<int:id>/reprocess", methods=["POST"])
+def reprocess_file(id):
+    """
+    (Ri)avvia OCR/YOLO (foto) o frame/trascrizione (video) per un file
+    specifico, in background — sia per i file mai elaborati (vedi
+    /api/backlog) sia per rielaborare un file già processato in precedenza
+    (es. dopo aver installato una libreria che prima mancava).
+    Le righe già presenti per quel file nelle tabelle coinvolte vengono
+    cancellate prima di rilanciare l'elaborazione, per non accumulare
+    duplicati ad ogni rielaborazione.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT path, tipo FROM files WHERE id = ?", (id,)).fetchone()
+        if not row:
+            abort(404, description="File non trovato nel database.")
+        path, tipo = row["path"], row["tipo"]
+
+        if not Path(path).exists():
+            abort(404, description="Il file non esiste più su disco.")
+
+        cursor = conn.cursor()
+        tabelle = ("ocr", "oggetti") if tipo == "foto" else ("frame", "trascrizioni")
+        for tabella in tabelle:
+            cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    threading.Thread(target=_post_process_file, args=(id, path, tipo), daemon=True).start()
+    return jsonify({"ok": True, "messaggio": "Elaborazione avviata in background."}), 202
 
 
 # ── Gestione errori ───────────────────────────────────────────────────────────
