@@ -12,9 +12,10 @@ exovision.db
 ├── metadati_foto       → dati EXIF estratti dalle foto
 ├── metadati_video      → dati tecnici estratti dai video
 ├── ocr                 → testo estratto dalle immagini (EasyOCR)
-├── oggetti             → oggetti rilevati nelle immagini (YOLOv8n)
-├── frame               → keyframe estratti dai video (scene detection ffmpeg)
-└── trascrizioni        → trascrizione audio dei video (faster-whisper)
+├── oggetti             → oggetti rilevati in immagini e video (YOLOv8n)
+├── frame               → keyframe estratti dai video (scene detection ffmpeg, con fallback a frame singolo)
+├── trascrizioni        → trascrizione audio dei video (faster-whisper)
+└── didascalie          → didascalia IA di foto/video (image captioning con BLIP)
 ```
 
 ---
@@ -34,8 +35,9 @@ Tabella centrale. Ogni riga rappresenta un file (foto o video) presente nell'arc
 | `data_modifica` | TEXT | Data ultima modifica (ISO 8601) |
 | `data_indicizzazione` | TEXT | Data in cui il file è stato indicizzato (ISO 8601) |
 | `metadati_completi` | INTEGER | `1` = metadati completi, `0` = metadati mancanti o parziali |
+| `descrizione` | TEXT | Descrizione manuale scritta dall'utente in UI — distinta dalla didascalia generata dall'IA (tabella `didascalie`) |
 
-> Il flag `metadati_completi` permette all'interfaccia di segnalare all'utente i file che necessitano attenzione.
+> Il flag `metadati_completi` permette all'interfaccia di segnalare all'utente i file che necessitano attenzione. Lo stato dell'elaborazione IA (OCR/YOLO/didascalia/trascrizione) è invece derivato a runtime dall'esistenza di righe nelle rispettive tabelle (`ia_stato` in `GET /api/files`), non da una colonna dedicata.
 
 ---
 
@@ -105,7 +107,7 @@ Testo estratto dalle immagini con EasyOCR. Collegata a `files` tramite `file_id`
 
 ## Tabella `oggetti`
 
-Oggetti rilevati nelle immagini con YOLOv8n. Collegata a `files` tramite `file_id`.
+Oggetti rilevati con YOLOv8n. Collegata a `files` tramite `file_id` — per le foto l'analisi gira sull'immagine originale, per i video sul primo keyframe rappresentativo estratto (tabella `frame`).
 
 | Colonna | Tipo | Descrizione |
 |---|---|---|
@@ -152,6 +154,22 @@ Trascrizione dell'audio dei video con faster-whisper. Collegata a `files` tramit
 
 ---
 
+## Tabella `didascalie`
+
+Didascalia generata dall'IA (BLIP, in inglese) — per le foto sull'immagine originale, per i video sul primo keyframe rappresentativo. Collegata a `files` tramite `file_id`, distinta dalla descrizione manuale (`files.descrizione`).
+
+| Colonna | Tipo | Descrizione |
+|---|---|---|
+| `id` | INTEGER PK | Identificativo univoco |
+| `file_id` | INTEGER FK | Riferimento a `files.id` |
+| `testo` | TEXT | Didascalia generata (NULL se non generata o errore) |
+| `lingua` | TEXT | Lingua della didascalia (sempre `en`, i modelli BLIP pubblici sono addestrati in inglese) |
+| `data_estrazione` | TEXT | Data di generazione della didascalia (ISO 8601) |
+
+> Stessa logica di segnaposto delle altre tabelle: una riga viene sempre inserita, anche a vuoto, per evitare ritentativi infiniti.
+
+---
+
 ## Relazioni
 
 ```
@@ -161,6 +179,7 @@ files (1) ──────────────── (N) ocr
 files (1) ──────────────── (N) oggetti
 files (1) ──────────────── (N) frame
 files (1) ──────────────── (N) trascrizioni
+files (1) ──────────────── (N) didascalie
 ```
 
 ---
