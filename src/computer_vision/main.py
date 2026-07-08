@@ -315,69 +315,81 @@ def aggiungi_nuove_foto(percorsi_foto, db_en, detector_en, embedder_en, face_en,
 # ==========================================
 def interrogazione_tag(db_en, embedder_en, query, tag_filtro=None):
     """
-    Esegue ricerche testuali e ibride sulla collezione semantica 
-    accettando query e filtri dinamici.
+    Ricerca multimodale unificata: sfrutta la potenza visiva del database vettoriale
+    e usa Python per validare incrociando i metadati testuali (Whisper e YOLO).
     """
-    print(f"\nINTERROGAZIONE SEMANTICA (Query: '{query}')")
+    print(f"\n=================== RICERCA MULTIMODALE UNIFICATA ===================")
+    print(f" -> Termine cercato: '{query}'")
+    if tag_filtro:
+        print(f" -> Filtro YOLO attivo:  '{tag_filtro}'")
 
+    # 1. Interroghiamo il DB vettoriale per avere i 10 migliori match concettuali
     vettore_query = embedder_en.istanzia_vettore_testo(query)
     v_query = vettore_query.tolist() if hasattr(
         vettore_query, 'tolist') else vettore_query
 
-    if tag_filtro:
-        tag_pulito = tag_filtro.lower().strip()
-        print(
-            f"[-] Ricerca Ibrida Rigida (Richiede tag YOLO '{tag_pulito}')...")
-        risultati_ibridi = db_en.cerca_ibrido(
-            v_query, tag_filtro=tag_pulito, n_risultati=10)
+    res = db_en.coll_semantica.query(
+        query_embeddings=[v_query],
+        n_results=10  # Ne peschiamo 10 per avere un buon margine
+    )
 
-        print(f"--- Risultati Ibridi con Filtro [{tag_pulito}] ---")
-        if risultati_ibridi and risultati_ibridi['ids'] and len(risultati_ibridi['ids'][0]) > 0:
-            for i in range(len(risultati_ibridi['ids'][0])):
-                meta = risultati_ibridi['metadatas'][0][i]
+    graduatoria = []
 
-                # ADATTAMENTO PER SUPPORTARE SIA FOTO CHE VIDEO
-                sorgente = meta.get('caption_originale',
-                                    meta.get('video_sorgente', 'N/D'))
-                timestamp = f" (Scena a {meta.get('timestamp')})" if 'timestamp' in meta else ""
+    # 2. Python analizza i metadati per creare la classifica perfetta
+    if res and res['ids'] and len(res['ids'][0]) > 0:
+        for i in range(len(res['ids'][0])):
+            id_record = res['ids'][0][i]
+            meta = res['metadatas'][0][i]
+            dist = res['distances'][0][i]
 
-                print(
-                    f" Pos #{i+1} | ID: {risultati_ibridi['ids'][0][i]} | Dist: {risultati_ibridi['distances'][0][i]:.4f}")
-                print(f"    Sorgente:    {sorgente}{timestamp}")
-        else:
-            print(
-                f"[!] Nessun risultato con filtro YOLO rigido per '{tag_pulito}'.")
+            audio_text = meta.get('audio_trascrizione', '').lower()
+            yolo_text = meta.get('yolo_tags', '').lower()
+
+            # Verifichiamo se la parola è presente nel testo parlato
+            match_audio = query.lower() in audio_text
+
+            # Verifichiamo il filtro YOLO (se richiesto)
+            if tag_filtro:
+                if tag_filtro.lower() not in yolo_text:
+                    continue  # Scarta il frame se non ha il tag YOLO richiesto
+
+            # Assegniamo l'etichetta e la priorità (Combinato vince su tutto)
+            if match_audio:
+                tipo_match = "Combinato (Audio + Visivo)"
+                priorita = 0
+            else:
+                tipo_match = "Visivo (SigLIP)"
+                priorita = 1
+
+            graduatoria.append({
+                "id": id_record, "meta": meta, "dist": dist,
+                "tipo": tipo_match, "priorita": priorita
+            })
+
+    # 3. Ordiniamo la classifica: prima i Combinati, poi i Visivi. A parità, vince la distanza minore.
+    graduatoria = sorted(graduatoria, key=lambda x: (x['priorita'], x['dist']))
+    graduatoria = graduatoria[:5]  # Teniamo solo i Top 5 assoluti
+
+    # 4. Stampa finale
+    print(
+        f"\n--- GRADUATORIA FINALE DEI MATCH CORRISPONDENTI ({len(graduatoria)}) ---")
+    if not graduatoria:
+        print("[!] Nessun elemento risponde ai criteri di ricerca impostati.")
     else:
-        print("[~] Filtro YOLO rigido saltato (nessun tag specificato).")
-
-    print(f"\n[-] Ricerca Semantica Allargata (Fallback SigLIP - Senza Filtri)...")
-    risultati_allargati = db_en.cerca_ibrido(
-        v_query, tag_filtro=None, n_risultati=5)
-
-    print("--- Risultati Allargati Semantici ---")
-    if risultati_allargati and risultati_allargati['ids'] and len(risultati_allargati['ids'][0]) > 0:
-        for i in range(len(risultati_allargati['ids'][0])):
-            meta = risultati_allargati['metadatas'][0][i]
-            yolo_tags = meta.get('yolo_tags', '')
-
-            # ADATTAMENTO PER SUPPORTARE SIA FOTO CHE VIDEO
+        for pos, dati in enumerate(graduatoria, 1):
+            meta = dati['meta']
             sorgente = meta.get('caption_originale',
                                 meta.get('video_sorgente', 'N/D'))
-            timestamp = f" (Scena a {meta.get('timestamp')})" if 'timestamp' in meta else ""
+            timestamp_str = f" | Scena al secondo [{meta.get('timestamp')}]" if 'timestamp' in meta else ""
 
-            notazione = ""
-            if tag_filtro and tag_filtro.lower().strip() not in yolo_tags:
-                notazione = " [SigLIP Rescue]"
-
+            print(f" Pos #{pos} | {dati['tipo']} | ID: {dati['id']}")
+            print(f"    File Sorgente: {sorgente}{timestamp_str}")
             print(
-                f" Pos #{i+1}{notazione} | ID: {risultati_allargati['ids'][0][i]}")
-            print(f"    Sorgente:    {sorgente}{timestamp}")
-            print(f"    Tag YOLO:    [{yolo_tags}]")
-            print(
-                f"    Distanza:    {risultati_allargati['distances'][0][i]:.4f}")
-    else:
-        print("[!] Nessun risultato trovato nella ricerca allargata.")
-    print("=" * 70)
+                f"    Testo Audio:   '{meta.get('audio_trascrizione', 'Nessun parlato rilevato')}'")
+            print(f"    Oggetti YOLO:  [{meta.get('yolo_tags', '')}]")
+            print(f"    Distanza Vet:  {dati['dist']:.4f}")
+            print("-" * 75)
+    print("=====================================================================\n")
 
 
 # ==========================================
@@ -436,32 +448,32 @@ def interrogazione_volti(db_en, face_en, percorso_foto_target, nome_persona="Tar
 # ==========================================
 # 5. ISPEZIONE DB PER NOME FOTO
 # ==========================================
-def mostra_tag_foto(nome_foto="18.jpeg"):
-    try:
-        db_en = ExoVisionDB()
-        tutti_i_dati = db_en.coll_semantica.get(include=["metadatas"])
+# def mostra_tag_foto(nome_foto="18.jpeg"):
+#     try:
+#         db_en = ExoVisionDB()
+#         tutti_i_dati = db_en.coll_semantica.get(include=["metadatas"])
 
-        foto_trovata = False
-        if tutti_i_dati and tutti_i_dati['metadatas']:
-            for idx, metadati in enumerate(tutti_i_dati['metadatas']):
-                caption = metadati.get('caption_originale', '')
+#         foto_trovata = False
+#         if tutti_i_dati and tutti_i_dati['metadatas']:
+#             for idx, metadati in enumerate(tutti_i_dati['metadatas']):
+#                 caption = metadati.get('caption_originale', '')
 
-                if nome_foto in caption:
-                    foto_trovata = True
-                    id_logico = tutti_i_dati['ids'][idx]
-                    tag_yolo = metadati.get('yolo_tags', 'Nessun tag rilevato')
-                    conteggio = metadati.get('yolo_object_count', 0)
+#                 if nome_foto in caption:
+#                     foto_trovata = True
+#                     id_logico = tutti_i_dati['ids'][idx]
+#                     tag_yolo = metadati.get('yolo_tags', 'Nessun tag rilevato')
+#                     conteggio = metadati.get('yolo_object_count', 0)
 
-                    print(f"File: {nome_foto} (ID: {id_logico})")
-                    print(f"Tag YOLO: [{tag_yolo}]")
-                    print(f"Conteggio oggetti: {conteggio}")
-                    break
+#                     print(f"File: {nome_foto} (ID: {id_logico})")
+#                     print(f"Tag YOLO: [{tag_yolo}]")
+#                     print(f"Conteggio oggetti: {conteggio}")
+#                     break
 
-        if not foto_trovata:
-            print(f"La foto '{nome_foto}' non è stata trovata nel database.")
+#         if not foto_trovata:
+#             print(f"La foto '{nome_foto}' non è stata trovata nel database.")
 
-    except Exception as e:
-        print(f"Errore durante la lettura dei tag: {e}")
+#     except Exception as e:
+#         print(f"Errore durante la lettura dei tag: {e}")
 
 
 # ==========================================
@@ -475,19 +487,20 @@ def main():
     # ---------------------------------------------------------
     # INTERRUTTORI LOGICI PRINCIPALI (Imposta a True cosa vuoi eseguire)
     ESEGUI_INGESTION_FOTO = False
-    ESEGUI_INGESTION_NUOVE_FOTO = True
+    ESEGUI_INGESTION_NUOVE_FOTO = False
     ESEGUI_RICERCA_TESTO = True
     ESEGUI_RICERCA_VOLTI = False
     ESEGUI_VIDEO_PIPELINE = False
+
     # query
-    TESTO_RICERCA = "horse"
+    TESTO_RICERCA = "scoioattolo"
 
     # path per pescare foto/video
     NUOVE_FOTO_DA_AGGIUNGERE = [
         r"C:\Users\alice.amato\Documents\learning\git\exovision\foto_test\Friese.jpg",
         r"C:\Users\alice.amato\Documents\learning\git\exovision\foto_test\images.jpg"
     ]
-    NOME_VIDEO_TEST = "13351896_1920_1080_30fps.mp4"
+    NOME_VIDEO_TEST = "YTDown.com_Shorts_Tour-di-una-TORINO-INSOLITA_Media_wMaxXl2nRKI_001_1080p60 (1).mp4"
 
     # ---------------------------------------------------------
     print("[~] Inizializzazione modelli IA in corso (attendere)...")
@@ -529,13 +542,38 @@ def main():
     if ESEGUI_RICERCA_TESTO:
         print("\n--- TEST RICERCA IBRIDA ---")
         interrogazione_tag(db_en, embedder_en,
-                           query=TESTO_RICERCA, tag_filtro="horse")
+                           query=TESTO_RICERCA, tag_filtro=None)
 
     # 3. RICERCA VOLTI NOTI
     if ESEGUI_RICERCA_VOLTI:
         print("\n--- TEST RICERCA VOLTI ---")
         interrogazione_volti(
             db_en, face_en, percorso_foto_target="known_faces/jim.jpg", nome_persona="jim carrey")
+
+    # =========================================================
+    # print("\n[-] Svuotamento dati video precedenti dal database...")
+    # try:
+    #     # 1. Elimina i frame video usando l'ID (cancella tutto ciò che inizia con VID_)
+    #     # Nota: Usiamo un filtro sui metadati se non possiamo fare un reset completo,
+    #     # oppure una cancellazione mirata. Il modo più sicuro in Chroma è filtrare per sorgente.
+    #     db_en.coll_semantica.delete(
+    #         where={
+    #             "video_sorgente": "YTDown.com_Shorts_Tour-di-una-TORINO-INSOLITA_Media_wMaxXl2nRKI_001_1080p60 (1).mp4"}
+    #     )
+    #     print("[+] Rimossi i vecchi frame del video da 'galleria_semantica'.")
+
+    #     # 2. Elimina i volti associati al video (filtrando per la presenza del metadato timestamp)
+    #     if hasattr(db_en, 'coll_volti'):
+    #         db_en.coll_volti.delete(
+    #             where={"timestamp": {"$exists": True}}
+    #         )
+    #         print("[+] Rimossi i vecchi volti del video da 'vettori_volti'.")
+
+    # except Exception as e:
+    #     print(
+    #         f"[!] Nota durante la pulizia: {e} (Se il database era già vuoto, ignora questo messaggio)")
+    # print("-" * 60)
+    # =========================================================
 
     # 4. PIPELINE MULTIMODALE VIDEO
     if ESEGUI_VIDEO_PIPELINE:
@@ -549,7 +587,8 @@ def main():
             processor.elabora_video(
                 yolo_model=detector_en,
                 siglip_model=embedder_en,
-                face_model=face_en
+                face_model=face_en,
+                threshold=0.92
             )
 
         except FileNotFoundError as e:
