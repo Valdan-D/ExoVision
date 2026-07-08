@@ -89,130 +89,123 @@ class VideoProcessor:
 
         print(f"\n[VIDEO] Avvio Scene Detection ({fps:.2f} FPS)...")
 
-        while True:
+        print(f"\n[VIDEO] Analisi avanzata dei cambi scena con PySceneDetect...")
+        from scenedetect import detect, ContentDetector
+
+        # 1. Rileva automaticamente le scene reali nel video usando l'algoritmo Content
+        lista_scene = detect(self.video_path, ContentDetector(threshold=27.0))
+
+        # Prendiamo il frame iniziale di ogni scena rilevata
+        frame_da_estrarre = []
+        for i, scena in enumerate(lista_scene):
+            # Ogni 'scena' contiene (tempo_inizio, tempo_fine) in formato FrameTimecode
+            frame_inizio = scena[0].get_frames()
+            frame_da_estrarre.append(frame_inizio)
+
+        # Se non trova scene (improbabile), forziamo almeno il frame 0 e frame a metà
+        if not frame_da_estrarre:
+            frame_da_estrarre = [0, int(total_frames / 2)]
+
+        print(
+            f"[+] PySceneDetect ha individuato {len(frame_da_estrarre)} scene reali nel video!")
+
+        # 2. Estrazione mirata dei frame identificati
+        for f_idx in frame_da_estrarre:
+            # Posizioniamo OpenCV esattamente sul frame della scena
+            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
             ret, frame = cap.read()
             if not ret:
-                break
+                continue
 
-            # Calcolo istogramma
-            hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            hist = cv2.calcHist([hsv_frame], [0, 1], None,
-                                [50, 60], [0, 180, 0, 256])
-            cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
+            frame_salvati += 1
+            secondi = f_idx / fps
+            minuti = int(secondi // 60)
+            sec = int(secondi % 60)
+            timestamp_str = f"{minuti:02d}:{sec:02d}"
 
-            is_keyframe = False
-            similarieta_stamp = 1.0  # Default
+            # Salva il frame su disco
+            filename = f"frame_{f_idx}_{minuti:02d}{sec:02d}.jpg"
+            filepath = os.path.join(self.dir_keyframes, filename)
+            cv2.imwrite(filepath, frame)
 
-            # Se è il primissimo frame, lo salviamo a prescindere!
-            if prev_hist is None:
-                is_keyframe = True
-                similarieta_stamp = 0.0  # Valore fittizio per "Nuova Scena Iniziale"
-            else:
-                # Confrontiamo con l'ULTIMO KEYFRAME SALVATO
-                similarieta = cv2.compareHist(
-                    prev_hist, hist, cv2.HISTCMP_CORREL)
-                similarieta_stamp = similarieta
-                if similarieta < threshold:
-                    is_keyframe = True
+            # Interrogazione modelli IA
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img_pil = Image.fromarray(frame_rgb)
 
-            # Se abbiamo rilevato un cambio scena (o è il primo frame)
-            if is_keyframe:
-                frame_salvati += 1
-                secondi = frame_idx / fps
-                minuti = int(secondi // 60)
-                sec = int(secondi % 60)
-                timestamp_str = f"{minuti:02d}:{sec:02d}"
+            # 1. YOLO
+            tag_yolo_batch, _ = yolo_model.estrai_tag_batch([img_pil])
+            lista_tag = [str(t).lower().strip() for t in tag_yolo_batch[0]] if isinstance(
+                tag_yolo_batch[0], list) else [str(tag_yolo_batch[0]).lower().strip()]
+            if "none" in lista_tag:
+                lista_tag.remove("none")
+            if not lista_tag:
+                lista_tag = ["none"]
 
-                # Salva il frame su disco
-                filename = f"frame_{frame_idx}_{minuti:02d}{sec:02d}.jpg"
-                filepath = os.path.join(self.dir_keyframes, filename)
-                cv2.imwrite(filepath, frame)
+            for t in lista_tag:
+                if t != "none":
+                    tutti_i_tag_trovati.add(t)
 
-                # --- INTERROGAZIONE MODELLI IA REALI ---
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img_pil = Image.fromarray(frame_rgb)
+            # 2. SigLIP
+            vettori_siglip_batch = siglip_model.istanzia_vettori_batch([
+                                                                       img_pil])
+            vettore = vettori_siglip_batch[0]
+            embedding_vettore = vettore.tolist() if hasattr(
+                vettore, "tolist") else list(vettore)
 
-                # 1. YOLO
-                tag_yolo_batch, _ = yolo_model.estrai_tag_batch([img_pil])
-                lista_tag = [str(t).lower().strip() for t in tag_yolo_batch[0]] if isinstance(
-                    tag_yolo_batch[0], list) else [str(tag_yolo_batch[0]).lower().strip()]
-                if "none" in lista_tag:
-                    lista_tag.remove("none")
-                if not lista_tag:
-                    lista_tag = ["none"]
+            # 3. Volti
+            ids_volti_frame = []
+            embeddings_volti_frame = []
+            metadati_volti_frame = []
 
-                for t in lista_tag:
-                    if t != "none":
-                        tutti_i_tag_trovati.add(t)
+            if "person" in lista_tag:
+                vettori_facciali = face_model.estrai_vettore_volto(filepath)
+                for v_idx, vettore_volto in enumerate(vettori_facciali):
+                    ids_volti_frame.append(f"face_{filename}_{v_idx}")
+                    embeddings_volti_frame.append(vettore_volto)
+                    metadati_volti_frame.append(
+                        {"parent_img_path": filepath, "timestamp": timestamp_str})
 
-                # 2. SigLIP
-                vettori_siglip_batch = siglip_model.istanzia_vettori_batch([
-                                                                           img_pil])
-                vettore = vettori_siglip_batch[0]
+            volti_rilevati = f"{len(embeddings_volti_frame)} volto/i" if embeddings_volti_frame else "Nessuno"
 
-                # Se è un array/tensor usiamo tolist(), se è già una lista la lasciamo così
-                embedding_vettore = vettore.tolist() if hasattr(
-                    vettore, "tolist") else list(vettore)
+            # 4. Sincronizzazione AUDIO-VIDEO
+            testo_parlato = self._trova_testo_per_timestamp(
+                secondi, segmenti_audio)
 
-                # 3. Volti
-                ids_volti_frame = []
-                embeddings_volti_frame = []
-                metadati_volti_frame = []
+            # Costruzione metadati complessi
+            id_univoco = f"VID_{self.video_name}_FR_{f_idx}"
+            tag_stringa = ", ".join(lista_tag)
 
-                if "person" in lista_tag:
-                    vettori_facciali = face_model.estrai_vettore_volto(
-                        filepath)
-                    for v_idx, vettore_volto in enumerate(vettori_facciali):
-                        ids_volti_frame.append(f"face_{filename}_{v_idx}")
-                        embeddings_volti_frame.append(vettore_volto)
-                        metadati_volti_frame.append(
-                            {"parent_img_path": filepath, "timestamp": timestamp_str})
+            metadati = {
+                "video_sorgente": self.video_filename,
+                "timestamp": timestamp_str,
+                "yolo_tags": tag_stringa,
+                "volti_rilevati": volti_rilevati,
+                "audio_trascrizione": testo_parlato,
+                "caption_ricerca": f"Visual: {tag_stringa}. Audio: {testo_parlato}"
+            }
 
-                volti_rilevati = f"{len(embeddings_volti_frame)} volto/i" if embeddings_volti_frame else "Nessuno"
+            # Scrittura DB
+            self.db_en.coll_semantica.add(
+                ids=[id_univoco],
+                embeddings=[embedding_vettore],
+                metadatas=[metadati]
+            )
 
-                # Audio
-                testo_parlato = self._trova_testo_per_timestamp(
-                    secondi, segmenti_audio)
+            if embeddings_volti_frame:
+                self.db_en.aggiungi_batch_volti(
+                    ids_volti_frame, embeddings_volti_frame, metadati_volti_frame)
 
-                # Metadati e Scrittura DB
-                id_univoco = f"VID_{self.video_name}_FR_{frame_idx}"
-                tag_stringa = ", ".join(lista_tag)
+            print(
+                f" -> [SCENA FRAME {f_idx}] Rilevata a {timestamp_str} | YOLO: [{tag_stringa}] | Audio sinc: '{testo_parlato}' | Volti: {volti_rilevati}")
 
-                metadati = {
-                    "video_sorgente": self.video_filename,
-                    "timestamp": timestamp_str,
-                    "yolo_tags": tag_stringa,
-                    "volti_rilevati": volti_rilevati,
-                    "audio_trascrizione": testo_parlato,
-                    "caption_ricerca": f"Visual: {tag_stringa}. Audio: {testo_parlato}"
-                }
+        cap.release()
 
-                self.db_en.coll_semantica.add(
-                    ids=[id_univoco],
-                    embeddings=[embedding_vettore],
-                    metadatas=[metadati]
-                )
-
-                if embeddings_volti_frame:
-                    self.db_en.aggiungi_batch_volti(
-                        ids_volti_frame, embeddings_volti_frame, metadati_volti_frame)
-
-                print(
-                    f" -> [FRAME {frame_idx}] Scena a {timestamp_str} | Similarità: {similarieta_stamp:.2f} | YOLO: [{tag_stringa}] | Volti: {volti_rilevati}")
-
-                # IMPORTANTE: Aggiorniamo il frame di riferimento SOLO quando salviamo un keyframe!
-                prev_hist = hist
-
-            frame_idx += 1
-
-            cap.release()
-
-            # --- STAMPA RESOCONTO FINALE ---
-            print(f"\n=== RESOCONTO ELABORAZIONE {self.video_filename} ===")
-            print(f" - Keyframe estratti e salvati nel DB: {frame_salvati}")
-            if tutti_i_tag_trovati:
-                print(
-                    f" - Tag YOLO unici individuati: {', '.join(tutti_i_tag_trovati)}")
-            else:
-                print(" - Tag YOLO unici individuati: Nessuno oggetto rilevato")
-            print("========================================================\n")
+        # --- STAMPA RESOCONTO FINALE ---
+        print(f"\n=== RESOCONTO ELABORAZIONE {self.video_filename} ===")
+        print(f" - Keyframe estratti e salvati nel DB: {frame_salvati}")
+        if tutti_i_tag_trovati:
+            print(
+                f" - Tag YOLO unici individuati: {', '.join(tutti_i_tag_trovati)}")
+        else:
+            print(" - Tag YOLO unici individuati: Nessuno oggetto rilevato")
+        print("========================================================\n")
