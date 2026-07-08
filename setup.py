@@ -97,18 +97,24 @@ def installa_requirements():
     titolo("Dipendenze Python (requirements.txt)")
 
     try:
-        from importlib.metadata import packages_distributions
-        installati = {p.lower() for p in packages_distributions().keys()}
+        from importlib.metadata import version, PackageNotFoundError
 
         with open("requirements.txt") as f:
             righe = [r.strip() for r in f if r.strip() and not r.startswith("#")]
 
         mancanti = []
         for pacchetto in righe:
+            # NB: cerchiamo per nome di distribuzione pip (quello scritto in
+            # requirements.txt), non per nome del modulo importabile — sono
+            # diversi per Pillow (PIL), ffmpeg-python (ffmpeg) e faster-whisper
+            # (faster_whisper). Confrontare gli import name con i nomi pip
+            # (versione precedente) dava falsi negativi su questi tre pacchetti
+            # ad ogni esecuzione, anche quando erano già installati.
             nome = pacchetto.split("==")[0].split(">=")[0].split("<=")[0].strip()
-            if nome.lower() in installati:
+            try:
+                version(nome)
                 ok(nome)
-            else:
+            except PackageNotFoundError:
                 avviso(f"{nome} — da installare")
                 mancanti.append(pacchetto)
 
