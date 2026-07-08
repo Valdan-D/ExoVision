@@ -9,6 +9,7 @@ import sqlite3
 import os
 import json
 import threading
+import queue
 from pathlib import Path
 from uuid import uuid4
 from flask import Flask, jsonify, request, send_from_directory, abort
@@ -50,8 +51,9 @@ DB_PATH = os.environ.get("EXOVISION_DB", load_config()["archivio"]["db"])
 # ── Elaborazione in background dopo /api/import (OCR/YOLO/frame/whisper) ──────
 #
 # /api/import fa solo lo step 1 (metadati) in modo sincrono e risponde subito.
-# OCR/YOLO/frame/trascrizione partono in un thread separato per ogni file
-# appena caricato, così l'upload non resta bloccato per i tempi di
+# OCR/YOLO/frame/trascrizione vengono accodati (un solo worker li elabora in
+# sequenza, vedi _coda_elaborazione più sotto) appena il file è caricato,
+# così l'upload non resta bloccato per i tempi di
 # caricamento modelli + inferenza (da ~1s a video lunghi con whisper).
 # Se una libreria non è installata (es. faster-whisper), il relativo step
 # viene semplicemente saltato: gli altri proseguono normalmente.
@@ -141,8 +143,8 @@ def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bo
 def _post_process_file(file_id: int, path: str, tipo: str):
     """
     Esegue OCR+YOLO+didascalia (foto) o keyframe+trascrizione (video) su un
-    singolo file appena importato. Girato in un thread di background da
-    /api/import.
+    singolo file. Chiamata dal worker della coda di elaborazione — non va
+    invocata direttamente da più punti in parallelo (vedi _accoda_elaborazione).
     """
     with _in_progress_lock:
         _in_progress_ids.add(file_id)
@@ -201,6 +203,35 @@ def _post_process_file(file_id: int, path: str, tipo: str):
         conn.close()
         with _in_progress_lock:
             _in_progress_ids.discard(file_id)
+
+
+# ── Coda di elaborazione (un solo file alla volta) ─────────────────────────────
+#
+# Un thread separato per ogni file (versione precedente) fa sì che, quando più
+# file vengono caricati/rielaborati insieme (stesso batch di /api/import,
+# oppure i pulsanti "Rielabora tutti"/"Elabora tutti" in UI), più modelli
+# pesanti (whisper, YOLO, BLIP) girino in parallelo sulla stessa CPU: in
+# pratica una delle elaborazioni può fallire in modo silenzioso (nessuna riga
+# scritta, solo un errore in console facile da perdere in mezzo agli altri).
+# Una coda con un solo worker elabora i file in sequenza: più lento in totale,
+# ma niente più elaborazioni "sparite" per contesa di risorse.
+
+_coda_elaborazione = queue.Queue()
+
+def _worker_elaborazione():
+    while True:
+        file_id, path, tipo = _coda_elaborazione.get()
+        try:
+            _post_process_file(file_id, path, tipo)
+        except Exception as e:
+            print(f"⚠️  Errore imprevisto in elaborazione background su file {file_id}: {e}")
+        finally:
+            _coda_elaborazione.task_done()
+
+threading.Thread(target=_worker_elaborazione, daemon=True).start()
+
+def _accoda_elaborazione(file_id: int, path: str, tipo: str):
+    _coda_elaborazione.put((file_id, path, tipo))
 
 
 # ── Utility DB ────────────────────────────────────────────────────────────────
@@ -772,9 +803,7 @@ def import_files():
                 meta = metadata_pipeline.estrai_metadati_video(str(dest))
                 metadata_pipeline.inserisci_metadati_video(conn, file_id, meta)
 
-            threading.Thread(
-                target=_post_process_file, args=(file_id, str(dest), tipo), daemon=True
-            ).start()
+            _accoda_elaborazione(file_id, str(dest), tipo)
 
             indicizzati += 1
     finally:
@@ -1004,8 +1033,8 @@ def reprocess_file(id):
     finally:
         conn.close()
 
-    threading.Thread(target=_post_process_file, args=(id, path, tipo), daemon=True).start()
-    return jsonify({"ok": True, "messaggio": "Elaborazione avviata in background."}), 202
+    _accoda_elaborazione(id, path, tipo)
+    return jsonify({"ok": True, "messaggio": "Elaborazione in coda."}), 202
 
 
 # ── Gestione errori ───────────────────────────────────────────────────────────
