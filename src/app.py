@@ -225,7 +225,7 @@ def search():
                     "tipo":              row["tipo"],
                     "path":              row["path"],
                     "metadati_completi": bool(row["metadati_completi"]),
-                    "anteprima":         f"/api/thumb/{row['id']}",
+                    "anteprima":         f"/api/preview/{row['id']}",
                 }
                 for row in results
             ]
@@ -316,7 +316,7 @@ def file_detail(file_id):
                 {
                     "id":        s["id"],
                     "nome_file": s["nome_file"],
-                    "anteprima": f"/api/thumb/{s['id']}",
+                    "anteprima": f"/api/preview/{s['id']}",
                 }
                 for s in simili
             ]
@@ -380,7 +380,7 @@ def file_list():
                     "tipo":              row["tipo"],
                     "path":              row["path"],
                     "metadati_completi": bool(row["metadati_completi"]),
-                    "anteprima":         f"/api/thumb/{row['id']}",
+                    "anteprima":         f"/api/preview/{row['id']}",
                     "dimensione_bytes":  row["dimensione_bytes"],
                     "data":              row["data_scatto"] or (row["data_modifica"] or "").split("T")[0] or None,
                     "larghezza":         row["larghezza"],
@@ -450,9 +450,39 @@ def stats():
 @app.route("/api/thumb/<int:file_id>")
 def thumb(file_id):
     """
-    Serve il file immagine originale dato l'id nel DB.
+    Serve il file originale dato l'id nel DB (usato per la visualizzazione
+    a schermo intero: <img> per le foto, <video src> per i video).
     NOTE PER STEFANO: per ora serve il file originale direttamente.
     In futuro si può aggiungere ridimensionamento con Pillow.
+    """
+    if not db_ready():
+        abort(404)
+
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT path FROM files WHERE id = ?", (file_id,)
+        ).fetchone()
+
+        if not row:
+            abort(404)
+
+        path = Path(row["path"])
+        if not path.exists():
+            abort(404, description=f"File non trovato su disco: {path}")
+
+        return send_from_directory(str(path.parent), path.name)
+    finally:
+        conn.close()
+
+
+@app.route("/api/preview/<int:file_id>")
+def preview(file_id):
+    """
+    Serve un'anteprima renderizzabile in <img> dato l'id nel DB.
+    Per le foto è il file immagine originale; per i video è il primo
+    keyframe estratto da exovision_frames.py (un <img> non può
+    renderizzare direttamente un file video).
     """
     if not db_ready():
         abort(404)
@@ -466,7 +496,21 @@ def thumb(file_id):
         if not row:
             abort(404)
 
-        path = Path(row["path"])
+        if row["tipo"] == "video":
+            frame = conn.execute(
+                """
+                SELECT path_frame FROM frame
+                WHERE file_id = ? AND path_frame IS NOT NULL
+                ORDER BY timestamp_sec ASC LIMIT 1
+                """,
+                (file_id,)
+            ).fetchone()
+            if not frame:
+                abort(404, description="Nessun keyframe disponibile per questo video: esegui exovision_frames.py.")
+            path = Path(frame["path_frame"])
+        else:
+            path = Path(row["path"])
+
         if not path.exists():
             abort(404, description=f"File non trovato su disco: {path}")
 
