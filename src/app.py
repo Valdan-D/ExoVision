@@ -180,9 +180,9 @@ def search():
     Risposta JSON:
       { query, results: [ { id, nome_file, tipo, path, metadati_completi, anteprima } ] }
 
-    NOTE PER SIMONE: questo endpoint usa una ricerca per parola chiave su OCR e oggetti.
-    Quando search.py con ChromaDB sarà pronto, sostituisci il corpo di questa funzione
-    con la chiamata al motore semantico vero.
+    NOTE PER SIMONE: questo endpoint usa una ricerca per parola chiave su OCR,
+    oggetti e trascrizioni audio. Quando search.py con ChromaDB sarà pronto,
+    sostituisci il corpo di questa funzione con la chiamata al motore semantico vero.
     """
     query = request.args.get("q", "").strip()
     limit = int(request.args.get("limit", 20))
@@ -192,7 +192,7 @@ def search():
 
     conn = get_db()
     try:
-        # Ricerca mock su testo OCR e oggetti rilevati
+        # Ricerca mock su testo OCR, oggetti rilevati e trascrizioni audio
         # TODO Simone: sostituire con ricerca vettoriale ChromaDB
         results = conn.execute("""
             SELECT DISTINCT
@@ -202,14 +202,17 @@ def search():
                 f.path,
                 f.metadati_completi,
                 o.testo   AS testo_ocr,
-                og.oggetto AS oggetto
+                og.oggetto AS oggetto,
+                t.testo   AS testo_trascrizione
             FROM files f
-            LEFT JOIN ocr o         ON f.id = o.file_id
-            LEFT JOIN oggetti og     ON f.id = og.file_id
+            LEFT JOIN ocr o           ON f.id = o.file_id
+            LEFT JOIN oggetti og      ON f.id = og.file_id
+            LEFT JOIN trascrizioni t  ON f.id = t.file_id
             WHERE
                 o.testo    LIKE :q
                 OR og.oggetto LIKE :q
                 OR f.nome_file LIKE :q
+                OR t.testo LIKE :q
             LIMIT :limit
         """, {"q": f"%{query}%", "limit": limit}).fetchall()
 
@@ -236,9 +239,9 @@ def search():
 @app.route("/api/file/<int:file_id>")
 def file_detail(file_id):
     """
-    Dettaglio completo di un file: metadati, OCR, oggetti rilevati.
+    Dettaglio completo di un file: metadati, OCR, trascrizione audio, oggetti rilevati.
     Risposta JSON:
-      { file, metadati, ocr, oggetti, simili }
+      { file, metadati, ocr, trascrizione, oggetti, simili }
     """
     if not db_ready():
         abort(404, description="Database non ancora inizializzato.")
@@ -270,6 +273,11 @@ def file_detail(file_id):
             "SELECT testo, confidenza FROM ocr WHERE file_id = ?", (file_id,)
         ).fetchone()
 
+        # Trascrizione audio (video)
+        trascrizione = conn.execute(
+            "SELECT testo, lingua, confidenza FROM trascrizioni WHERE file_id = ?", (file_id,)
+        ).fetchone()
+
         # Oggetti rilevati
         oggetti = conn.execute("""
             SELECT oggetto, confidenza, bbox_x1, bbox_y1, bbox_x2, bbox_y2
@@ -297,6 +305,11 @@ def file_detail(file_id):
             "ocr": {
                 "testo":      ocr["testo"] if ocr else None,
                 "confidenza": ocr["confidenza"] if ocr else None,
+            },
+            "trascrizione": {
+                "testo":      trascrizione["testo"] if trascrizione else None,
+                "lingua":     trascrizione["lingua"] if trascrizione else None,
+                "confidenza": trascrizione["confidenza"] if trascrizione else None,
             },
             "oggetti": [dict(o) for o in oggetti],
             "simili": [

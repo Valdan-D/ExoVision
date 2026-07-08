@@ -1019,6 +1019,7 @@
     const f = data.file;
     const meta = data.metadati || {};
     const ocr = data.ocr || {};
+    const trascrizione = data.trascrizione || {};
     const isVideo = f.tipo === "video";
     const dataVisibile = meta.data_creazione || "—";
     const sizeVisibile = f.dimensione_file ? fmtSize(f.dimensione_file) : "—";
@@ -1035,6 +1036,9 @@
     
     const oggettiChips = data.oggetti && data.oggetti.length ? data.oggetti.map(o => `<span class="chip">${escapeHtml(o.oggetto)} <span style="opacity:.6">${Math.round(o.confidenza * 100)}%</span></span>` ).join("") : '<span class="muted">Nessun oggetto rilevato</span>';
     const ocrBlock = ocr.testo ? `<blockquote class="ocr-text">${escapeHtml(ocr.testo)}</blockquote> <div class="subtle" style="margin-top:6px;">Confidenza: ${ocr.confidenza ? Math.round(ocr.confidenza * 100) + "%" : "—"}</div>` : '<p class="muted">Nessun testo rilevato.</p>';
+    const trascrizioneBlock = trascrizione.testo
+      ? `<blockquote class="ocr-text">${escapeHtml(trascrizione.testo)}</blockquote> <div class="subtle" style="margin-top:6px;">Lingua: ${trascrizione.lingua ? escapeHtml(trascrizione.lingua) : "—"} · Confidenza: ${trascrizione.confidenza ? Math.round(trascrizione.confidenza * 100) + "%" : "—"}</div>`
+      : '<p class="muted">Nessun parlato rilevato.</p>';
     const mediaEl = isVideo ? `<video controls style="width:100%;max-height:640px;border-radius:var(--radius);" src="/api/thumb/${f.id}"></video>` : `<img src="/api/thumb/${f.id}" alt="${escapeHtml(f.nome_file)}">`;
     
     // Iniezione del layout aggiornato con doppia modalità (view ed edit) nel pannello dei metadati
@@ -1101,6 +1105,7 @@
       </div>
       <div class="section-title">Testo OCR</div>
       ${ocrBlock}
+      ${isVideo ? `<div class="section-title">Trascrizione audio</div>${trascrizioneBlock}` : ""}
       <div class="section-title">Elementi simili <span class="count">(${data.simili.length})</span></div>
       ${similiRowHTML(data.simili)}
     `;
