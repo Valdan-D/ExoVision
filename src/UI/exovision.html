@@ -1047,10 +1047,11 @@
       ? `<div class="obs-description">${escapeHtml(descrizioneVal)}</div>`
       : `<div class="obs-description empty">Nessuna descrizione — clicca sulla matita per aggiungerne una.</div>`;
 
-    // Didascalia generata dall'IA (BLIP, in inglese) — solo foto, distinta dalla descrizione manuale sopra
-    const didascaliaBlock = (!isVideo && didascalia.testo)
+    // Didascalia generata dall'IA (BLIP, in inglese) — per i video è calcolata sul primo
+    // frame estratto, non sull'intero video — distinta dalla descrizione manuale sopra
+    const didascaliaBlock = didascalia.testo
       ? `<div class="obs-description" style="font-style:italic;">
-           <span class="subtle" style="display:block;font-style:normal;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Didascalia IA (EN)</span>
+           <span class="subtle" style="display:block;font-style:normal;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Didascalia IA (EN)${isVideo ? " — dal frame iniziale" : ""}</span>
            ${escapeHtml(didascalia.testo)}
          </div>`
       : "";
@@ -1351,7 +1352,7 @@
       const sizeStr = item.dimensione_bytes
         ? " · " + (item.dimensione_bytes / (1024 * 1024)).toFixed(1) + " MB" : "";
       const IA_BADGE = {
-        elaborato:        '<span class="badge badge-ok" title="OCR/oggetti/didascalia (o frame/trascrizione) già eseguiti">IA ✓</span>',
+        elaborato:        '<span class="badge badge-ok" title="OCR/oggetti/didascalia (foto) o frame/trascrizione/oggetti/didascalia (video) già eseguiti">IA ✓</span>',
         parziale:         '<span class="badge badge-warning" title="Solo alcuni step IA sono stati eseguiti">IA parziale</span>',
         non_elaborato:    '<span class="badge badge-warning" title="Nessuno step IA è mai stato eseguito su questo file">IA: non elaborato</span>',
         non_disponibile:  ""
@@ -1368,7 +1369,7 @@
           <td>${dim}${sizeStr}</td>
           <td>${tagsHTML(item.tags)}</td>
           <td>${item.file_esistente === false ? '<span class="badge badge-error">File mancante</span>' : (item.metadati_completi ? '<span class="badge badge-ok">Completo</span>' : '<span class="badge badge-warning">Incompleto</span>')} ${iaBadge}</td>
-          <td>${item.file_esistente === false || item.elaborazione_in_corso ? "" : `<button class="btn secondary reprocess-btn" data-id="${item.id}" title="Rielabora OCR/oggetti/didascalia (o frame/trascrizione)" style="padding:4px 10px;font-size:.78rem;">🔄 Rielabora</button>`}</td>
+          <td>${item.file_esistente === false || item.elaborazione_in_corso ? "" : `<button class="btn secondary reprocess-btn" data-id="${item.id}" title="Rielabora OCR/oggetti/didascalia (foto) o frame/trascrizione/oggetti/didascalia (video)" style="padding:4px 10px;font-size:.78rem;">🔄 Rielabora</button>`}</td>
         </tr>`;
     }).join("") || `<tr><td colspan="8" class="muted" style="padding:20px;">Nessun risultato.</td></tr>`;
     metaTableBody.querySelectorAll(".reprocess-btn").forEach(btn => {
@@ -1528,7 +1529,7 @@
 
   function renderBacklogList(items) {
     backlogSummary.textContent = items.length
-      ? `${items.length} file mai elaborati con OCR/oggetti/didascalia (foto) o frame/trascrizione (video)`
+      ? `${items.length} file mai elaborati con OCR/oggetti/didascalia (foto) o frame/trascrizione/oggetti/didascalia (video)`
       : "Nessun file arretrato: tutto è già stato elaborato.";
     backlogReprocessAllBtn.classList.toggle("hidden", items.length === 0);
     backlogList.innerHTML = items.map(item => `

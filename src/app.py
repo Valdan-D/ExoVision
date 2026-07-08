@@ -112,8 +112,9 @@ def _file_in_elaborazione(file_id: int) -> bool:
 def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bool,
                        has_trascrizione: bool, has_didascalia: bool = False) -> str:
     """
-    Riassume lo stato di OCR/YOLO/didascalia (foto) o frame/trascrizione (video)
-    in un'unica etichetta, contando solo gli step per cui la libreria richiesta
+    Riassume lo stato di OCR/YOLO/didascalia (foto) o frame/trascrizione/YOLO/
+    didascalia sul primo frame (video) in un'unica etichetta, contando solo
+    gli step per cui la libreria richiesta
     è disponibile su questa macchina — altrimenti un file resterebbe per
     sempre "parziale" se ad es. faster-whisper o transformers non sono
     installati, anche dopo aver rielaborato tutto il possibile.
@@ -129,6 +130,8 @@ def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bo
         richiesti = []
         if frames_pipeline.FFMPEG_OK:      richiesti.append(has_frame)
         if whisper_pipeline.WHISPER_OK:    richiesti.append(has_trascrizione)
+        if yolo_pipeline.YOLO_OK:          richiesti.append(has_oggetti)
+        if caption_pipeline.CAPTION_OK:    richiesti.append(has_didascalia)
 
     if not richiesti:
         return "non_disponibile"
@@ -181,6 +184,7 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                     print(f"⚠️  Errore didascalia in background su file {file_id}: {e}")
 
         else:  # video
+            frame_rappresentativo = None
             if frames_pipeline.FFMPEG_OK:
                 try:
                     cartella_out = Path(__file__).parent.parent / frames_pipeline.CARTELLA_FRAME
@@ -188,6 +192,8 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                     frames = frames_pipeline.estrai_keyframe(path, cartella_out, file_id, Path(path).stem)
                     frames_pipeline.init_tabella_frame(conn)
                     frames_pipeline.inserisci_frame(conn, file_id, frames)
+                    if frames:
+                        frame_rappresentativo = frames[0]["path_frame"]
                 except Exception as e:
                     print(f"⚠️  Errore estrazione frame in background su file {file_id}: {e}")
 
@@ -199,6 +205,27 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                     whisper_pipeline.inserisci_trascrizione(conn, file_id, testo, lingua, confidenza)
                 except Exception as e:
                     print(f"⚠️  Errore trascrizione in background su file {file_id}: {e}")
+
+            # Tag/didascalia sul primo frame estratto — stessa logica delle foto,
+            # applicata al keyframe rappresentativo (senza rianalizzare l'intero video).
+            if frame_rappresentativo:
+                if yolo_pipeline.YOLO_OK:
+                    try:
+                        model = _get_yolo_model()
+                        oggetti = yolo_pipeline.rileva_oggetti(model, frame_rappresentativo)
+                        yolo_pipeline.init_tabella_oggetti(conn)
+                        yolo_pipeline.inserisci_oggetti(conn, file_id, oggetti)
+                    except Exception as e:
+                        print(f"⚠️  Errore YOLO (frame video) in background su file {file_id}: {e}")
+
+                if caption_pipeline.CAPTION_OK:
+                    try:
+                        model, processor = _get_caption_model_e_processor()
+                        testo = caption_pipeline.genera_didascalia(model, processor, frame_rappresentativo)
+                        caption_pipeline.init_tabella_didascalie(conn)
+                        caption_pipeline.inserisci_didascalia(conn, file_id, testo)
+                    except Exception as e:
+                        print(f"⚠️  Errore didascalia (frame video) in background su file {file_id}: {e}")
     finally:
         conn.close()
         with _in_progress_lock:
@@ -1026,7 +1053,7 @@ def reprocess_file(id):
             abort(404, description="Il file non esiste più su disco.")
 
         cursor = conn.cursor()
-        tabelle = ("ocr", "oggetti", "didascalie") if tipo == "foto" else ("frame", "trascrizioni")
+        tabelle = ("ocr", "oggetti", "didascalie") if tipo == "foto" else ("frame", "trascrizioni", "oggetti", "didascalie")
         for tabella in tabelle:
             cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
         conn.commit()
