@@ -9,6 +9,17 @@ import subprocess
 import shutil
 import platform
 
+# Su Windows la console usa spesso una codepage (es. cp1252) che non sa
+# codificare i caratteri Unicode usati qui sotto (box-drawing, emoji, ecc.),
+# facendo crashare lo script con UnicodeEncodeError su una console "pulita"
+# (es. lanciata dal launcher DeepSight.bat). Forziamo l'output a UTF-8,
+# sostituendo i caratteri non rappresentabili invece di sollevare eccezioni.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except AttributeError:
+    pass
+
 
 # ─── Colori terminale ─────────────────────────────────────────────────────────
 

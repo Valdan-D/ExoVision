@@ -28,6 +28,11 @@ ExoVision permette di cercare immagini e video usando il linguaggio naturale, se
 
 ```
 ExoVision/
+├── DeepSight.bat                # Launcher Windows: venv + setup + avvio + browser
+├── launch.sh                    # Launcher macOS/Linux (stessa logica del .bat)
+├── crea_scorciatoia.ps1         # Crea una scorciatoia Desktop con icona (Windows, opzionale)
+├── assets/
+│   └── deepsight.ico            # Icona del launcher
 ├── setup.py                    # Verifica/installa dipendenze Python + FFmpeg
 ├── requirements.txt
 ├── config.example.json         # Template configurazione (committato)
@@ -40,10 +45,10 @@ ExoVision/
 │   ├── exovision_frames.py     # Step 4: keyframe video (scene detection ffmpeg + fallback frame singolo)
 │   ├── exovision_whisper.py    # Step 5: trascrizione audio video (faster-whisper)
 │   ├── exovision_caption.py    # Step 6: didascalia foto/video (image captioning con BLIP)
-│   ├── computer_vision/        # Modulo separato: ricerca semantica ChromaDB (SigLIP) +
-│   │   ├── main.py             #   riconoscimento facciale (ArcFace/RetinaFace via DeepFace).
-│   │   ├── database.py         #   Standalone, non ancora agganciato alle API di app.py.
-│   │   └── models/
+│   ├── computer_vision/        # Ricerca semantica (SigLIP+ChromaDB) e riconoscimento facciale
+│   │   ├── main.py             #   (ArcFace/RetinaFace via DeepFace). database.py/embedding.py/
+│   │   ├── database.py         #   face_rec.py sono integrati in app.py; main.py e
+│   │   └── models/             #   video_processor.py restano script standalone a sé.
 │   └── UI/
 │       └── exovision.html      # Interfaccia web (HTML/CSS/JS inline)
 ├── docs/
@@ -78,7 +83,14 @@ ExoVision/
 
 ## 🚀 Installazione
 
-### Prerequisiti
+### Avvio rapido (consigliato)
+
+Se non vuoi usare la riga di comando: doppio click su **`DeepSight.bat`** (Windows) o esegui **`./launch.sh`** (macOS/Linux, richiede prima `chmod +x launch.sh`) dalla root del progetto. Lo script crea da solo un ambiente virtuale (`.venv/`, isolato dal Python di sistema), verifica/installa le dipendenze al suo interno con `setup.py`, avvia il server e apre il browser su `http://localhost:5000`. Richiede comunque Python 3.10+ già installato sul sistema.
+
+> Su Windows, per una scorciatoia con icona sul Desktop: esegui una volta `crea_scorciatoia.ps1` (tasto destro → *Esegui con PowerShell*).
+> `launch.sh` è scritto e rivisto seguendo la stessa logica del `.bat`, ma non ancora verificato su hardware reale macOS/Linux.
+
+### Prerequisiti (installazione manuale)
 
 - Python 3.10 o superiore
 - FFmpeg installato sul sistema → [ffmpeg.org](https://ffmpeg.org/download.html)
