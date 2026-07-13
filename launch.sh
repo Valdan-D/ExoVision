@@ -10,9 +10,23 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
+if [ -d ".venv" ] && [ ! -f ".venv/bin/activate" ]; then
+    echo "Trovato un ambiente virtuale incompleto in .venv, lo ricreo..."
+    rm -rf .venv
+fi
+
 if [ ! -d ".venv" ]; then
     echo "Creo l'ambiente virtuale in .venv ..."
     python3 -m venv .venv
+fi
+
+if [ ! -f ".venv/bin/activate" ]; then
+    echo
+    echo "Errore: la creazione del venv non ha prodotto .venv/bin/activate."
+    echo "Su Debian/Ubuntu il modulo venv e' un pacchetto di sistema separato da python3:"
+    echo "  sudo apt install python3-venv"
+    echo "(o python3.<versione>-venv, es. python3.10-venv, a seconda della tua versione di Python)"
+    exit 1
 fi
 
 # shellcheck source=/dev/null
