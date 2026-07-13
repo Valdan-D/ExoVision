@@ -21,6 +21,9 @@ import exovision_yolo as yolo_pipeline
 import exovision_frames as frames_pipeline
 import exovision_whisper as whisper_pipeline
 import exovision_caption as caption_pipeline
+from computer_vision.database import ExoVisionDB, CHROMA_OK
+from computer_vision.models.embedding import SigLIPEmbedder, SIGLIP_OK
+from computer_vision.models.face_rec import ExoFaceRecognizer, FACE_OK
 
 app = Flask(__name__, static_folder="UI", static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB per richiesta di import
@@ -100,6 +103,35 @@ def _get_caption_model_e_processor():
                 _caption_model = caption_pipeline.BlipForConditionalGeneration.from_pretrained(caption_pipeline.MODELLO)
     return _caption_model, _caption_processor
 
+_vector_db        = None
+_siglip_embedder  = None
+_face_recognizer  = None
+
+def _get_vector_db():
+    global _vector_db
+    if _vector_db is None and CHROMA_OK:
+        with _model_lock:
+            if _vector_db is None:
+                percorso = load_config().get("chroma", {}).get("percorso", "exovision_vector_db")
+                _vector_db = ExoVisionDB(path=percorso)
+    return _vector_db
+
+def _get_siglip_embedder():
+    global _siglip_embedder
+    if _siglip_embedder is None and SIGLIP_OK:
+        with _model_lock:
+            if _siglip_embedder is None:
+                _siglip_embedder = SigLIPEmbedder()
+    return _siglip_embedder
+
+def _get_face_recognizer():
+    global _face_recognizer
+    if _face_recognizer is None and FACE_OK:
+        with _model_lock:
+            if _face_recognizer is None:
+                _face_recognizer = ExoFaceRecognizer()
+    return _face_recognizer
+
 
 _in_progress_lock = threading.Lock()
 _in_progress_ids  = set()
@@ -143,6 +175,45 @@ def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bo
     return "parziale"
 
 
+def _indicizza_semantico_e_volti(file_id: int, img_path: str, oggetti: list):
+    """
+    Calcola l'embedding SigLIP dell'immagine (o del frame rappresentativo per i
+    video) e, se è presente una persona, gli embedding ArcFace dei volti
+    rilevati — entrambi salvati in ChromaDB. Usa upsert quindi rielaborare lo
+    stesso file non crea duplicati.
+    """
+    tag_rilevati = [o["oggetto"] for o in oggetti if o.get("oggetto")]
+
+    if SIGLIP_OK and CHROMA_OK:
+        try:
+            from PIL import Image
+            db = _get_vector_db()
+            embedder = _get_siglip_embedder()
+            img = Image.open(img_path).convert("RGB")
+            vettore = embedder.istanzia_vettori_batch([img])[0]
+            metadata = {"file_id": file_id}
+            for t in set(tag_rilevati):
+                metadata[f"yolo_has_{t.lower().strip()}"] = 1
+            db.aggiungi_batch_semantica([f"file_{file_id}"], [vettore], [metadata])
+        except Exception as e:
+            print(f"⚠️  Errore embedding semantico in background su file {file_id}: {e}")
+
+    # Senza YOLO non sappiamo se c'è una persona nell'inquadratura: tentiamo
+    # comunque il rilevamento volti piuttosto che disabilitarlo silenziosamente.
+    if FACE_OK and CHROMA_OK and (not yolo_pipeline.YOLO_OK or "person" in tag_rilevati):
+        try:
+            db = _get_vector_db()
+            recognizer = _get_face_recognizer()
+            vettori_volti = recognizer.estrai_vettore_volto(img_path)
+            db.coll_volti.delete(where={"file_id": file_id})
+            if vettori_volti:
+                ids = [f"face_{file_id}_{i}" for i in range(len(vettori_volti))]
+                metadatas = [{"file_id": file_id, "path": img_path} for _ in vettori_volti]
+                db.aggiungi_batch_volti(ids, vettori_volti, metadatas)
+        except Exception as e:
+            print(f"⚠️  Errore embedding volti in background su file {file_id}: {e}")
+
+
 def _post_process_file(file_id: int, path: str, tipo: str):
     """
     Esegue OCR+YOLO+didascalia (foto) o keyframe+trascrizione (video) su un
@@ -165,6 +236,7 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                 except Exception as e:
                     print(f"⚠️  Errore OCR in background su file {file_id}: {e}")
 
+            oggetti = []
             if yolo_pipeline.YOLO_OK:
                 try:
                     model = _get_yolo_model()
@@ -182,6 +254,8 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                     caption_pipeline.inserisci_didascalia(conn, file_id, testo)
                 except Exception as e:
                     print(f"⚠️  Errore didascalia in background su file {file_id}: {e}")
+
+            _indicizza_semantico_e_volti(file_id, path, oggetti)
 
         else:  # video
             frame_rappresentativo = None
@@ -209,6 +283,7 @@ def _post_process_file(file_id: int, path: str, tipo: str):
             # Tag/didascalia sul primo frame estratto — stessa logica delle foto,
             # applicata al keyframe rappresentativo (senza rianalizzare l'intero video).
             if frame_rappresentativo:
+                oggetti = []
                 if yolo_pipeline.YOLO_OK:
                     try:
                         model = _get_yolo_model()
@@ -226,6 +301,8 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                         caption_pipeline.inserisci_didascalia(conn, file_id, testo)
                     except Exception as e:
                         print(f"⚠️  Errore didascalia (frame video) in background su file {file_id}: {e}")
+
+                _indicizza_semantico_e_volti(file_id, frame_rappresentativo, oggetti)
     finally:
         conn.close()
         with _in_progress_lock:
@@ -462,6 +539,154 @@ def search():
         conn.close()
 
 
+@app.route("/api/search/semantic")
+def search_semantic():
+    """
+    Ricerca semantica per concetto/descrizione (SigLIP + ChromaDB), affiancata
+    alla ricerca per parola chiave di /api/search (non la sostituisce).
+    Parametri GET:
+      q     — descrizione testuale della query (es. "tramonto sul lago")
+      limit — numero massimo di risultati (default 20)
+      tag   — se presente, filtra sui file in cui YOLO ha rilevato quel tag
+
+    Risposta JSON: { query, results: [ { id, nome_file, tipo, path, metadati_completi, anteprima } ] }
+    """
+    query = request.args.get("q", "").strip()
+    limit = int(request.args.get("limit", 20))
+    tag   = request.args.get("tag") or None
+
+    if not SIGLIP_OK or not CHROMA_OK:
+        return jsonify({
+            "query": query, "results": [],
+            "errore": "Ricerca semantica non disponibile: libreria mancante su questo server."
+        }), 503
+
+    if not query or not db_ready():
+        return jsonify({"query": query, "results": []})
+
+    embedder = _get_siglip_embedder()
+    db       = _get_vector_db()
+    vettore  = embedder.istanzia_vettore_testo(query)
+    trovati  = db.cerca_ibrido(vettore, tag_filtro=tag, n_risultati=limit)
+
+    id_ordine = []
+    for doc_id in trovati.get("ids", [[]])[0]:
+        if doc_id.startswith("file_"):
+            try:
+                id_ordine.append(int(doc_id.split("_", 1)[1]))
+            except ValueError:
+                continue
+
+    if not id_ordine:
+        return jsonify({"query": query, "results": []})
+
+    conn = get_db()
+    try:
+        placeholders  = ",".join("?" * len(id_ordine))
+        righe_per_id  = {
+            r["id"]: r for r in conn.execute(
+                f"SELECT id, nome_file, tipo, path, metadati_completi FROM files WHERE id IN ({placeholders})",
+                id_ordine
+            ).fetchall()
+        }
+        return jsonify({
+            "query": query,
+            "results": [
+                {
+                    "id":                rid,
+                    "nome_file":         righe_per_id[rid]["nome_file"],
+                    "tipo":              righe_per_id[rid]["tipo"],
+                    "path":              righe_per_id[rid]["path"],
+                    "metadati_completi": bool(righe_per_id[rid]["metadati_completi"]),
+                    "anteprima":         f"/api/preview/{rid}",
+                }
+                for rid in id_ordine if rid in righe_per_id
+            ]
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/search/face", methods=["POST"])
+def search_face():
+    """
+    Ricerca per volto simile: riceve una foto di riferimento (multipart/form-data,
+    campo "file", un solo file) ed interroga ChromaDB (embedding ArcFace) per
+    trovare i file dell'archivio con volti simili, sotto la soglia di distanza
+    coseno configurata (config.volti.soglia_distanza, default 0.68).
+
+    Risposta JSON: { results: [ { id, nome_file, tipo, anteprima, distanza } ] }
+    """
+    if not FACE_OK or not CHROMA_OK:
+        return jsonify({
+            "results": [],
+            "errore": "Riconoscimento facciale non disponibile: libreria mancante su questo server."
+        }), 503
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        abort(400, description="Nessuna foto di riferimento ricevuta.")
+
+    cartella_tmp = Path(__file__).parent.parent / "tmp_ricerca_volti"
+    cartella_tmp.mkdir(parents=True, exist_ok=True)
+    tmp_path = cartella_tmp / f"{uuid4().hex}_{secure_filename(file.filename)}"
+    file.save(tmp_path)
+
+    try:
+        recognizer    = _get_face_recognizer()
+        vettori_volti = recognizer.estrai_vettore_volto(str(tmp_path))
+        if not vettori_volti:
+            return jsonify({"results": [], "errore": "Nessun volto rilevato nella foto caricata."})
+
+        soglia = load_config().get("volti", {}).get("soglia_distanza", 0.68)
+        limit  = int(request.args.get("limit", 20))
+        db     = _get_vector_db()
+
+        migliore_distanza = {}
+        for vettore in vettori_volti:
+            trovati   = db.cerca_volto_simile(vettore, n_risultati=limit)
+            distanze  = trovati.get("distances", [[]])[0]
+            metadatas = trovati.get("metadatas", [[]])[0]
+            for meta, distanza in zip(metadatas, distanze):
+                fid = meta.get("file_id")
+                if fid is None or distanza > soglia:
+                    continue
+                if fid not in migliore_distanza or distanza < migliore_distanza[fid]:
+                    migliore_distanza[fid] = distanza
+
+        if not migliore_distanza:
+            return jsonify({"results": []})
+
+        id_ordine = sorted(migliore_distanza, key=migliore_distanza.get)
+
+        conn = get_db()
+        try:
+            placeholders = ",".join("?" * len(id_ordine))
+            righe_per_id = {
+                r["id"]: r for r in conn.execute(
+                    f"SELECT id, nome_file, tipo, metadati_completi FROM files WHERE id IN ({placeholders})",
+                    id_ordine
+                ).fetchall()
+            }
+            return jsonify({
+                "results": [
+                    {
+                        "id":                rid,
+                        "nome_file":         righe_per_id[rid]["nome_file"],
+                        "tipo":              righe_per_id[rid]["tipo"],
+                        "metadati_completi": bool(righe_per_id[rid]["metadati_completi"]),
+                        "anteprima":         f"/api/preview/{rid}",
+                        "distanza":          round(migliore_distanza[rid], 4),
+                    }
+                    for rid in id_ordine if rid in righe_per_id
+                ]
+            })
+        finally:
+            conn.close()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 # ── API — Dettaglio file ───────────────────────────────────────────────────────
 
 @app.route("/api/file/<int:file_id>")
@@ -519,18 +744,43 @@ def file_detail(file_id):
             ORDER BY confidenza DESC
         """, (file_id,)).fetchall()
 
-        # Immagini simili — placeholder
-        # TODO Alice/Simone: sostituire con query ChromaDB per embedding vicini
-        simili = conn.execute("""
-            SELECT DISTINCT f.id, f.nome_file, f.path
-            FROM files f
-            JOIN oggetti o ON f.id = o.file_id
-            WHERE o.oggetto IN (
-                SELECT oggetto FROM oggetti WHERE file_id = ? AND oggetto IS NOT NULL
-            )
-            AND f.id != ?
-            LIMIT 6
-        """, (file_id, file_id)).fetchall()
+        # Immagini simili — via embedding SigLIP/ChromaDB se disponibile,
+        # altrimenti fallback sulla vecchia query per tag YOLO condivisi.
+        simili_ids = []
+        if SIGLIP_OK and CHROMA_OK:
+            try:
+                db = _get_vector_db()
+                proprio = db.coll_semantica.get(ids=[f"file_{file_id}"], include=["embeddings"])
+                vettori_propri = proprio.get("embeddings")
+                if vettori_propri is not None and len(vettori_propri) > 0:
+                    trovati = db.cerca_ibrido(vettori_propri[0], n_risultati=7)
+                    for doc_id in trovati.get("ids", [[]])[0]:
+                        if doc_id.startswith("file_"):
+                            sid = int(doc_id.split("_", 1)[1])
+                            if sid != file_id:
+                                simili_ids.append(sid)
+            except Exception as e:
+                print(f"⚠️  Errore ricerca simili (ChromaDB) su file {file_id}: {e}")
+
+        if simili_ids:
+            placeholders = ",".join("?" * len(simili_ids))
+            righe_per_id = {
+                r["id"]: r for r in conn.execute(
+                    f"SELECT id, nome_file FROM files WHERE id IN ({placeholders})", simili_ids
+                ).fetchall()
+            }
+            simili = [righe_per_id[sid] for sid in simili_ids[:6] if sid in righe_per_id]
+        else:
+            simili = conn.execute("""
+                SELECT DISTINCT f.id, f.nome_file, f.path
+                FROM files f
+                JOIN oggetti o ON f.id = o.file_id
+                WHERE o.oggetto IN (
+                    SELECT oggetto FROM oggetti WHERE file_id = ? AND oggetto IS NOT NULL
+                )
+                AND f.id != ?
+                LIMIT 6
+            """, (file_id, file_id)).fetchall()
 
         return jsonify({
             "file": dict(file_row),

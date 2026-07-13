@@ -9,8 +9,12 @@ stesso spazio vettoriale geometrico a 768 dimensioni.
 Modulo per la generazione di embedding multimodali tramite SigLIP (Versione Batch Corretta).
 """
 
-import torch
-from transformers import AutoProcessor, AutoModel
+try:
+    import torch
+    from transformers import AutoProcessor, AutoModel
+    SIGLIP_OK = True
+except ImportError:
+    SIGLIP_OK = False
 
 
 class SigLIPEmbedder:

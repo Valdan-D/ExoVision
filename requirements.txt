@@ -32,3 +32,4 @@ opencv-python
 deepface
 moviepy
 tf-keras
+sentencepiece

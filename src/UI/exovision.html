@@ -611,6 +611,7 @@
       <li class="nav-item" data-view="settings" tabindex="0"><span class="ic" data-icon="settings"></span> Impostazioni</li>
       <li class="nav-item" data-view="metadata" tabindex="0"><span class="ic" data-icon="tag"></span> Metadati</li>
       <li class="nav-item" data-view="import" tabindex="0"><span class="ic" data-icon="upload"></span> Importa</li>
+      <li class="nav-item" data-view="facesearch" tabindex="0"><span class="ic" data-icon="user"></span> Ricerca volto</li>
       <li class="nav-item" data-view="log" tabindex="0"><span class="ic" data-icon="log"></span> Log</li>
     </ul>
     <div class="sidebar-footer"><span>ExoVision v0.6</span><span class="status-dot" title="Servizio attivo"></span></div>
@@ -643,6 +644,10 @@
           <span class="ic" data-icon="search"></span>
           <input type="text" id="searchInput" placeholder='Cerca per descrizione, oggetto, luogo, persona… es. "tramonto sul mare"'>
           <button id="searchBtn">Cerca</button>
+        </div>
+        <div class="segmented" id="searchModeSegmented" style="margin-top:10px;">
+          <button class="seg-btn active" data-mode="keyword"><span class="ic" data-icon="tag"></span> Parole chiave</button>
+          <button class="seg-btn" data-mode="semantic"><span class="ic" data-icon="cpu"></span> Semantica</button>
         </div>
       </div>
       <div class="search-meta" id="searchMeta"></div>
@@ -764,6 +769,28 @@
       </div>
     </section>
 
+    <!-- ================= RICERCA VOLTO ================= -->
+    <section class="view" id="view-facesearch">
+      <h1 class="page-title">Ricerca per volto simile</h1>
+      <p class="subtle">Carica una foto di una persona per trovare tutti i file dell'archivio in cui compare un volto simile.</p>
+
+      <div class="dropzone reticle" id="faceDropzone">
+        <div class="dz-icon"><span class="ic" data-icon="user"></span></div>
+        <div><strong>Trascina qui una foto</strong> oppure clicca per selezionarla</div>
+        <div class="subtle" style="margin-top:6px;">Un solo volto di riferimento per ricerca</div>
+        <input type="file" id="faceFileInput" accept="image/*" style="display:none;">
+      </div>
+
+      <div class="file-list" id="faceFileList"></div>
+
+      <div style="display:flex;gap:10px;align-items:center;margin-top:6px;">
+        <button class="btn" id="startFaceSearchBtn" disabled>Cerca volti simili</button>
+      </div>
+
+      <div class="search-meta" id="faceSearchMeta"></div>
+      <div class="grid" id="faceResultsGrid"></div>
+    </section>
+
     <!-- ================= LOG ================= -->
     <section class="view" id="view-log">
       <h1 class="page-title">Log eventi</h1>
@@ -812,7 +839,8 @@
     image: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.4"/><circle cx="8.4" cy="9.4" r="1.6"/><path d="M21 16.2 15.6 11a1.5 1.5 0 0 0-2.1 0L4 19.5"/></svg>',
     play: '<svg class="icon filled" viewBox="0 0 24 24"><path d="M7 4.2v15.6l13-7.8Z"/></svg>',
     telescope: '<svg class="icon" viewBox="0 0 24 24"><path d="M3 10.6 15 6l1.6 4.3-12 4.4Z"/><path d="M9 12.3 7 19M16.2 8.4l3.5-1.3a1.4 1.4 0 0 1 1.8.8l.5 1.3a1.4 1.4 0 0 1-.8 1.8l-3.5 1.3"/><circle cx="6" cy="17.4" r="2"/></svg>',
-    archive: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>'
+    archive: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>',
+    user: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="8.2" r="3.6"/><path d="M4.5 20c1.2-4 4-6 7.5-6s6.3 2 7.5 6"/></svg>'
   };
   function icon(name){ return ICONS[name] || ""; }
   function bindStaticIcons(){
@@ -942,7 +970,17 @@
   }
 
   let searchDebounce = null;
+  let searchMode = "keyword";
   const searchBar = document.getElementById("searchBar");
+  const searchModeSegmented = document.getElementById("searchModeSegmented");
+  searchModeSegmented.addEventListener("click", e => {
+    const btn = e.target.closest(".seg-btn");
+    if (!btn) return;
+    searchModeSegmented.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    searchMode = btn.dataset.mode;
+    renderGrid(searchInput.value);
+  });
 
   function skeletonGridHTML(n){
     let out = "";
@@ -959,7 +997,8 @@
     searchBar.classList.add("scanning");
     try {
       if (q) {
-        const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=48`);
+        const endpoint = searchMode === "semantic" ? "/api/search/semantic" : "/api/search";
+        const res  = await fetch(`${endpoint}?q=${encodeURIComponent(q)}&limit=48`);
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           resultsGrid.innerHTML = `<p class="muted">${escapeHtml(err.errore || "Errore nel caricamento.")}</p>`;
@@ -1002,6 +1041,79 @@
   searchInput.addEventListener("input", () => {
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => renderGrid(searchInput.value), 350);
+  });
+
+  /* ============================================================
+     RICERCA VOLTO
+  ============================================================ */
+  let stagedFaceFile = null;
+  const faceDropzone       = document.getElementById("faceDropzone");
+  const faceFileInput      = document.getElementById("faceFileInput");
+  const faceFileList       = document.getElementById("faceFileList");
+  const startFaceSearchBtn = document.getElementById("startFaceSearchBtn");
+  const faceSearchMeta     = document.getElementById("faceSearchMeta");
+  const faceResultsGrid    = document.getElementById("faceResultsGrid");
+
+  function renderFaceFileList(){
+    faceFileList.innerHTML = stagedFaceFile
+      ? `<div class="file-row"><span>${escapeHtml(stagedFaceFile.name)}</span></div>`
+      : "";
+    startFaceSearchBtn.disabled = !stagedFaceFile;
+  }
+  function setFaceFile(file){
+    stagedFaceFile = file || null;
+    renderFaceFileList();
+  }
+  faceDropzone.addEventListener("click", () => faceFileInput.click());
+  faceFileInput.addEventListener("change", () => setFaceFile(faceFileInput.files[0]));
+  ["dragenter","dragover"].forEach(evt => faceDropzone.addEventListener(evt, e => {
+    e.preventDefault(); faceDropzone.classList.add("dragover");
+  }));
+  ["dragleave","drop"].forEach(evt => faceDropzone.addEventListener(evt, e => {
+    e.preventDefault(); faceDropzone.classList.remove("dragover");
+  }));
+  faceDropzone.addEventListener("drop", e => {
+    if (e.dataTransfer && e.dataTransfer.files.length) setFaceFile(e.dataTransfer.files[0]);
+  });
+
+  function bindFaceCardClicks(){
+    faceResultsGrid.querySelectorAll(".card").forEach(card => {
+      card.addEventListener("click", () => openDetail(parseInt(card.dataset.id, 10)));
+    });
+  }
+
+  startFaceSearchBtn.addEventListener("click", async () => {
+    if (!stagedFaceFile) return;
+    startFaceSearchBtn.disabled = true;
+    faceResultsGrid.innerHTML = skeletonGridHTML(4);
+    faceSearchMeta.textContent = "Ricerca in corso…";
+    const formData = new FormData();
+    formData.append("file", stagedFaceFile);
+    try {
+      const res  = await fetch("/api/search/face", { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        faceResultsGrid.innerHTML = `<p class="muted">${escapeHtml(data.errore || "Errore nella ricerca.")}</p>`;
+        faceSearchMeta.textContent = "";
+        return;
+      }
+      if (data.errore) {
+        faceResultsGrid.innerHTML = "";
+        faceSearchMeta.textContent = data.errore;
+        return;
+      }
+      faceResultsGrid.innerHTML = data.results.length
+        ? data.results.map((item, i) => cardHTML(item, i)).join("")
+        : `<div class="empty-state"><span class="eic">${icon("telescope")}</span>Nessun volto simile trovato nell'archivio.</div>`;
+      faceSearchMeta.textContent = data.results.length ? `${data.results.length} corrispondenze trovate` : "";
+      bindFaceCardClicks();
+    } catch (e) {
+      faceResultsGrid.innerHTML = '<p class="muted">Impossibile contattare il server.</p>';
+      faceSearchMeta.textContent = "";
+      console.error(e);
+    } finally {
+      startFaceSearchBtn.disabled = !stagedFaceFile;
+    }
   });
 
   /* ============================================================

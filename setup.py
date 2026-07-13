@@ -163,6 +163,7 @@ def verifica_import():
         ("deepface",       "deepface"),
         ("moviepy",        "moviepy"),
         ("tf_keras",       "tf-keras"),
+        ("sentencepiece",  "sentencepiece"),
     ]
 
     tutti_ok = True

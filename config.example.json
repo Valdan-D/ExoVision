@@ -28,6 +28,12 @@
     "soglia_similarita": 0.75,
     "modalita": "locale"
   },
+  "chroma": {
+    "percorso": "exovision_vector_db"
+  },
+  "volti": {
+    "soglia_distanza": 0.68
+  },
   "ui": {
     "tema_scuro": false
   }

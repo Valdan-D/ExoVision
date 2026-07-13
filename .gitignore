@@ -8,5 +8,7 @@ config.json
 *.pt
 frame/
 archivio_importati/
+exovision_vector_db/
+tmp_ricerca_volti/
 CLAUDE.md
 .claude/

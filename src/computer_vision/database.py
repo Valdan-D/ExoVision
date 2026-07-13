@@ -6,7 +6,11 @@ Questo file astrae l'interfaccia di ChromaDB, gestendo due collezioni distinte:
 2. Vettori Volti (ArcFace) per il riconoscimento biometrico istantaneo e dinamico.
 """
 
-import chromadb
+try:
+    import chromadb
+    CHROMA_OK = True
+except ImportError:
+    CHROMA_OK = False
 
 
 class ExoVisionDB:
@@ -49,7 +53,7 @@ class ExoVisionDB:
         """Salva i vettori globali SigLIP e i tag YOLO nella collezione semantica"""
         if not lista_ids:
             return
-        self.coll_semantica.add(
+        self.coll_semantica.upsert(
             ids=lista_ids,
             embeddings=lista_vettori,
             metadatas=lista_metadatas
@@ -59,7 +63,7 @@ class ExoVisionDB:
         """Salva i vettori facciali estratti da RetinaFace/ArcFace nella collezione volti"""
         if not lista_ids:
             return
-        self.coll_volti.add(
+        self.coll_volti.upsert(
             ids=lista_ids,
             embeddings=lista_vettori,
             metadatas=lista_metadatas

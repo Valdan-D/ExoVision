@@ -1,5 +1,10 @@
 import os
-from deepface import DeepFace
+
+try:
+    from deepface import DeepFace
+    FACE_OK = True
+except ImportError:
+    FACE_OK = False
 
 
 class ExoFaceRecognizer:
