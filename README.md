@@ -30,6 +30,7 @@ ExoVision permette di cercare immagini e video usando il linguaggio naturale, se
 ExoVision/
 ├── DeepSight.bat                # Launcher Windows: venv + setup + avvio + browser
 ├── launch.sh                    # Launcher macOS/Linux (stessa logica del .bat)
+├── install_on_ubuntu.sh         # Installa un Python 3.10-3.12 su Ubuntu/Debian se manca (vedi sotto)
 ├── crea_scorciatoia.ps1         # Crea una scorciatoia Desktop con icona (Windows, opzionale)
 ├── assets/
 │   └── deepsight.ico            # Icona del launcher
@@ -89,6 +90,8 @@ Se non vuoi usare la riga di comando: doppio click su **`DeepSight.bat`** (Windo
 
 > Su Windows, per una scorciatoia con icona sul Desktop: esegui una volta `crea_scorciatoia.ps1` (tasto destro → *Esegui con PowerShell*).
 > `launch.sh` è scritto e rivisto seguendo la stessa logica del `.bat`, ma non ancora verificato su hardware reale macOS/Linux.
+
+> **Ubuntu con solo Python molto recente (es. 3.14):** su alcune distro rolling/recenti il Python di sistema è troppo nuovo e torch/tensorflow/deepface non hanno ancora build compatibili, facendo fallire `pip install` con `ResolutionImpossible`. Se `launch.sh` avvisa che non trova una versione 3.10-3.12, esegui prima `./install_on_ubuntu.sh` (richiede `apt-get`/sudo): cerca una versione idonea già installata e, se manca, installa `python3.12` dai repository apt di default o, se non disponibile, dalla PPA `deadsnakes/ppa`.
 
 ### Prerequisiti (installazione manuale)
 
