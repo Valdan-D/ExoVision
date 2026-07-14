@@ -5,6 +5,7 @@ FFmpeg deve essere installato sul sistema: https://ffmpeg.org/download.html
 """
 
 import sqlite3
+import shutil
 import sys
 import re
 import json
@@ -25,8 +26,11 @@ except ImportError:
 # ─── Configurazione ───────────────────────────────────────────────────────────
 
 _CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+_CONFIG_EXAMPLE_PATH = Path(__file__).parent.parent / "config.example.json"
 
 def _load_config():
+    if not _CONFIG_PATH.exists() and _CONFIG_EXAMPLE_PATH.exists():
+        shutil.copy(_CONFIG_EXAMPLE_PATH, _CONFIG_PATH)
     with open(_CONFIG_PATH, encoding="utf-8") as f:
         return json.load(f)
 
