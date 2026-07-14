@@ -11,5 +11,7 @@ archivio_importati/
 exovision_vector_db/
 tmp_ricerca_volti/
 .venv/
+foto_test/
+known_faces/
 CLAUDE.md
 .claude/

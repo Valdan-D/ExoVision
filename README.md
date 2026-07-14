@@ -55,7 +55,6 @@ ExoVision/
 ├── docs/
 │   └── database_sqlite.md      # Documentazione database
 ├── frame/                   # Keyframe estratti dai video (ignorata da git)
-├── tests/
 ├── data/                    # (ignorata da git — dati locali)
 ├── .gitignore
 └── README.md
