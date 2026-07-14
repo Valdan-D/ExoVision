@@ -85,7 +85,9 @@ ExoVision/
 
 ### Avvio rapido (consigliato)
 
-Se non vuoi usare la riga di comando: doppio click su **`DeepSight.bat`** (Windows) o esegui **`./launch.sh`** (macOS/Linux, richiede prima `chmod +x launch.sh`) dalla root del progetto. Lo script crea da solo un ambiente virtuale (`.venv/`, isolato dal Python di sistema), verifica/installa le dipendenze al suo interno con `setup.py`, avvia il server e apre il browser su `http://localhost:5000`. Richiede comunque Python 3.10+ già installato sul sistema.
+Se non vuoi usare la riga di comando: doppio click su **`DeepSight.bat`** (Windows) o esegui **`./launch.sh`** (macOS/Linux, richiede prima `chmod +x launch.sh`) dalla root del progetto. Lo script fa tutto da solo: crea un ambiente virtuale (`.venv/`, isolato dal Python di sistema), verifica/installa le dipendenze al suo interno con `setup.py`, avvia il server e apre il browser su `http://localhost:5000` — non serve lanciare `setup.py` a mano né eseguire altri comandi prima. Richiede comunque Python 3.10+ già installato sul sistema.
+
+> Durante la verifica delle dipendenze possono comparire righe `WARNING` di TensorFlow/absl (es. `oneDNN custom operations are on`, `tf.losses.sparse_softmax_cross_entropy is deprecated`): sono solo rumore di log stampato quando viene importato `deepface`/`tf_keras`, non indicano un errore — l'esito reale è il riepilogo finale (`✓ ...è pronto`).
 
 > Su Windows, per una scorciatoia con icona sul Desktop: esegui una volta `crea_scorciatoia.ps1` (tasto destro → *Esegui con PowerShell*).
 > `launch.sh` è scritto e rivisto seguendo la stessa logica del `.bat`, ma non ancora verificato su hardware reale macOS/Linux.
