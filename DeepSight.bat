@@ -2,6 +2,15 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
+rem Su una VM/macchina lenta, Flask puo' impiegare piu' di qualche secondo ad
+rem avviarsi (import di librerie pesanti): un ritardo fisso prima di aprire il
+rem browser puo' scattare troppo presto, mostrando un errore di connessione
+rem invece della pagina. Questo blocco (invocato ricorsivamente su se stesso,
+rem vedi ":attendi_apri" in fondo al file) fa polling reale sul server finche'
+rem non risponde, con un timeout massimo di sicurezza per non restare bloccato
+rem all'infinito se qualcosa va storto.
+if "%~1"=="--attendi-apri" goto :attendi_apri
+
 rem Preferiamo Python 3.10-3.12: torch/tensorflow (da cui dipende deepface)
 rem spesso non hanno ancora build compatibili con versioni di Python molto
 rem recenti appena uscite, causando un ResolutionImpossible di pip che
@@ -69,10 +78,31 @@ if errorlevel 1 (
     exit /b 1
 )
 
-start "" cmd /c "timeout /t 3 >nul & start "" http://localhost:5000"
+start "" cmd /c ""%~f0" --attendi-apri"
 
 echo.
 echo === Avvio ExoVision - chiudi questa finestra per fermare il server ===
 python src\app.py
 
 pause
+exit /b 0
+
+:attendi_apri
+set "TENTATIVI=0"
+:attendi_loop
+curl -s -o nul http://localhost:5000 >nul 2>&1
+if not errorlevel 1 (
+    start "" http://localhost:5000
+    exit /b 0
+)
+set /a TENTATIVI+=1
+if !TENTATIVI! GEQ 30 (
+    rem Fallback di sicurezza: apri comunque il browser dopo ~30s anche se il
+    rem polling non ha mai avuto risposta, invece di restare bloccato in
+    rem silenzio (l'utente vede almeno l'errore di connessione nel browser,
+    rem con l'indicazione che qualcosa nel server non e' partito).
+    start "" http://localhost:5000
+    exit /b 0
+)
+timeout /t 1 >nul
+goto :attendi_loop

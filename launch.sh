@@ -63,7 +63,19 @@ echo "=== Verifica dipendenze (dentro il venv) ==="
 python setup.py
 
 (
-    sleep 3
+    # Su una VM/macchina lenta, Flask puo' impiegare piu' di qualche secondo ad
+    # avviarsi (import di librerie pesanti): un ritardo fisso prima di aprire
+    # il browser puo' scattare troppo presto. Facciamo polling reale sul
+    # server finche' non risponde, con un timeout massimo di sicurezza per non
+    # restare bloccati all'infinito se qualcosa va storto.
+    tentativi=0
+    while [ "$tentativi" -lt 30 ]; do
+        if curl -s -o /dev/null http://localhost:5000; then
+            break
+        fi
+        tentativi=$((tentativi + 1))
+        sleep 1
+    done
     if command -v xdg-open >/dev/null 2>&1; then
         xdg-open http://localhost:5000
     elif command -v open >/dev/null 2>&1; then
