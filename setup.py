@@ -5,6 +5,7 @@ Esegui questo script prima di tutto il resto:
 """
 
 import sys
+import os
 import subprocess
 import shutil
 import platform
@@ -131,10 +132,26 @@ def installa_requirements():
 
         if mancanti:
             print(f"\n  ⏳ Installazione pacchetti mancanti...")
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install"] + mancanti,
-                capture_output=True, text=True
-            )
+            # Su alcune distro Linux /tmp e' un tmpfs piccolo (es. 4 GB): pip vi
+            # scarica/scompatta temporaneamente i pacchetti prima di installarli,
+            # e un'installazione combinata di librerie IA pesanti (torch,
+            # tensorflow, cuda, ecc.) puo' saturarlo anche se il disco ha
+            # ampio spazio libero, fallendo con un errore di quota/spazio
+            # esaurito fuorviante. Usiamo una cartella temporanea dentro il
+            # progetto stesso (stesso filesystem del venv, tipicamente molto
+            # piu' capiente) per evitare il problema.
+            tmp_pip = os.path.join(os.getcwd(), ".pip-tmp")
+            os.makedirs(tmp_pip, exist_ok=True)
+            env = os.environ.copy()
+            for var in ("TMPDIR", "TEMP", "TMP"):
+                env[var] = tmp_pip
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install"] + mancanti,
+                    capture_output=True, text=True, env=env
+                )
+            finally:
+                shutil.rmtree(tmp_pip, ignore_errors=True)
             if result.returncode == 0:
                 ok("Installazione completata")
                 return True
