@@ -202,6 +202,18 @@ def verifica_import():
         except ImportError:
             errore(f"{modulo} — non importabile (pip install {nome_pip})")
             tutti_ok = False
+        except OSError as e:
+            # Su Windows, torch/tensorflow (librerie native C++, es. c10.dll)
+            # falliscono il caricamento con WinError 126 se manca il Microsoft
+            # Visual C++ Redistributable — comune su installazioni/VM pulite,
+            # non un problema dei pacchetti Python in sé. Senza questo except
+            # l'OSError non veniva intercettato (non è una sottoclasse di
+            # ImportError) e faceva crashare l'intero script con un traceback.
+            errore(f"{modulo} — errore di caricamento nativo: {e}")
+            if platform.system() == "Windows":
+                avviso("Probabile causa: manca il Microsoft Visual C++ Redistributable (richiesto da torch/tensorflow).")
+                avviso("Scaricalo da: https://aka.ms/vs/17/release/vc_redist.x64.exe e riprova.")
+            tutti_ok = False
 
     return tutti_ok
 
