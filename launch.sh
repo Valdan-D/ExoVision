@@ -68,9 +68,24 @@ python setup.py
     # il browser puo' scattare troppo presto. Facciamo polling reale sul
     # server finche' non risponde, con un timeout massimo di sicurezza per non
     # restare bloccati all'infinito se qualcosa va storto.
+    #
+    # curl non e' garantito presente (verificato su una VM Ubuntu reale: non
+    # preinstallato, il loop stampava "comando non trovato" 30 volte invece di
+    # limitarsi ad aprire il browser dopo il timeout). wget e' il fallback piu'
+    # comune su Debian/Ubuntu minimali; se manca anche quello, saltiamo il
+    # polling e ci affidiamo solo al timeout di sicurezza sotto.
+    if command -v curl >/dev/null 2>&1; then
+        controlla_server() { curl -s -o /dev/null http://localhost:5000; }
+    elif command -v wget >/dev/null 2>&1; then
+        controlla_server() { wget -q -O /dev/null http://localhost:5000; }
+    else
+        echo "Nota: ne' curl ne' wget trovati — apro il browser dopo un'attesa fissa invece di controllare quando il server e' pronto."
+        controlla_server() { return 1; }
+    fi
+
     tentativi=0
     while [ "$tentativi" -lt 30 ]; do
-        if curl -s -o /dev/null http://localhost:5000; then
+        if controlla_server; then
             break
         fi
         tentativi=$((tentativi + 1))
