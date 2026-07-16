@@ -8,7 +8,7 @@
     "confidenza_minima": 0.4
   },
   "yolo": {
-    "modello": "yolov8n.pt",
+    "modalita": "base",
     "confidenza_minima": 0.4
   },
   "video": {

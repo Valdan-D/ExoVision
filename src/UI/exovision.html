@@ -677,6 +677,16 @@
         </div>
 
         <div class="settings-row">
+          <label class="title">Estrazione tag</label>
+          <div class="desc">Modalità di riconoscimento oggetti (YOLO) usata per generare i tag di foto e video. "Accurata" usa un modello più pesante e preciso, ma più lento.</div>
+          <label class="switch">
+            <input type="checkbox" id="tagAccurateToggle">
+            <span class="slider-toggle"></span>
+          </label>
+          <span style="margin-left:10px;font-size:.85rem;" id="tagAccurateLabel">Base</span>
+        </div>
+
+        <div class="settings-row">
           <label class="title">Threshold similarità semantica</label>
           <div class="desc">Soglia minima di similarità per considerare due elementi "simili" nei risultati.</div>
           <input type="range" id="thresholdSlider" min="0" max="100" step="5" value="75">
@@ -1348,6 +1358,12 @@
         thresholdValue.textContent = `${pct}%`;
       }
 
+      if (cfg.yolo?.modalita) {
+        const accurata = cfg.yolo.modalita === "accurata";
+        tagAccurateToggle.checked = accurata;
+        tagAccurateLabel.textContent = accurata ? "Accurata" : "Base";
+      }
+
       if (cfg.ricerca?.modalita) {
         modeSegmented.querySelectorAll(".seg-btn").forEach(b =>
           b.classList.toggle("active", b.dataset.mode === cfg.ricerca.modalita)
@@ -1372,6 +1388,7 @@
         soglia_similarita: parseInt(thresholdSlider.value, 10) / 100,
         modalita: activeMode
       },
+      yolo: { modalita: tagAccurateToggle.checked ? "accurata" : "base" },
       ui: { tema_scuro: document.body.classList.contains("dark") }
     };
 
@@ -1403,6 +1420,12 @@
   const thresholdValue = document.getElementById("thresholdValue");
   thresholdSlider.addEventListener("input", () => {
     thresholdValue.textContent = `${thresholdSlider.value}%`;
+  });
+
+  const tagAccurateToggle = document.getElementById("tagAccurateToggle");
+  const tagAccurateLabel = document.getElementById("tagAccurateLabel");
+  tagAccurateToggle.addEventListener("change", () => {
+    tagAccurateLabel.textContent = tagAccurateToggle.checked ? "Accurata" : "Base";
   });
 
   const modeDescs = {

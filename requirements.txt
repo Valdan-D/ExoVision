@@ -8,6 +8,9 @@ piexif
 # Metadati video
 ffmpeg-python
 
+# Scene detection video (motore primario dei keyframe, con fallback ffmpeg)
+scenedetect
+
 # OCR
 easyocr
 

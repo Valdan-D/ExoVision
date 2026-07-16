@@ -1,7 +1,15 @@
 """
-ExoVision — Riconoscimento oggetti con YOLOv8 nano e inserimento in SQLite
+ExoVision — Riconoscimento oggetti (YOLO) e inserimento in SQLite
+
+Questo script è solo il layer di config/DB/CLI dello step 3 della pipeline: il
+motore di inferenza vero e proprio è computer_vision.models.obj_detection.YoloDetector
+(condiviso con l'ingestion standalone di computer_vision/main.py), qui usato in
+modalità "singola immagine per volta" — coerente con la coda seriale di app.py e
+con lo scan sequenziale di processa_cartella().
+
 Dipendenze: pip install ultralytics
-Nota: alla prima esecuzione scarica il modello (~6MB), poi lavora offline.
+Nota: alla prima esecuzione scarica il modello scelto (~6MB per il nano/"base",
+più pesante per il medium/"accurata"), poi lavora offline.
 """
 
 import sqlite3
@@ -15,8 +23,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 try:
-    from ultralytics import YOLO
-    YOLO_OK = True
+    from computer_vision.models.obj_detection import YoloDetector, YOLO_OK
 except ImportError:
     YOLO_OK = False
     # NB: niente sys.exit qui — vedi commento equivalente in exovision_ocr.py
@@ -36,7 +43,14 @@ def _load_config():
 
 _cfg = _load_config()
 
-MODELLO           = _cfg["yolo"]["modello"]
+# "base" (yolov8n, veloce/leggero) vs "accurata" (yolov8m, più preciso e pesante)
+# — impostabile dalla UI (Impostazioni → Estrazione tag). Se un config.json
+# precedente non ha ancora la chiave "modalita" (o aveva solo il vecchio campo
+# "modello"), il default "base" mantiene il comportamento di prima (yolov8n.pt).
+MODELLI_YOLO = {"base": "yolov8n.pt", "accurata": "yolov8m.pt"}
+
+MODALITA          = _cfg["yolo"].get("modalita", "base")
+MODELLO           = MODELLI_YOLO.get(MODALITA, MODELLI_YOLO["base"])
 CONFIDENZA_MINIMA = _cfg["yolo"]["confidenza_minima"]
 
 FOTO_EXT = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".bmp"}
@@ -93,6 +107,10 @@ def inserisci_oggetti(conn: sqlite3.Connection, file_id: int, oggetti: list):
         """, (file_id, now))
     else:
         for o in oggetti:
+            # .get(...) invece di o["..."]: YoloDetector.rileva_oggetti() non
+            # calcola più i bounding box (non consumati da nessun client, vedi
+            # obj_detection.py) — restano NULL in colonne comunque presenti nello
+            # schema, senza bisogno di una migrazione DB.
             conn.execute("""
                 INSERT INTO oggetti
                     (file_id, oggetto, confidenza, bbox_x1, bbox_y1, bbox_x2, bbox_y2, data_estrazione)
@@ -101,8 +119,8 @@ def inserisci_oggetti(conn: sqlite3.Connection, file_id: int, oggetti: list):
                 file_id,
                 o["oggetto"],
                 o["confidenza"],
-                o["bbox_x1"], o["bbox_y1"],
-                o["bbox_x2"], o["bbox_y2"],
+                o.get("bbox_x1"), o.get("bbox_y1"),
+                o.get("bbox_x2"), o.get("bbox_y2"),
                 now
             ))
     conn.commit()
@@ -110,32 +128,13 @@ def inserisci_oggetti(conn: sqlite3.Connection, file_id: int, oggetti: list):
 
 # ─── Riconoscimento oggetti ───────────────────────────────────────────────────
 
-def rileva_oggetti(model: YOLO, path: str) -> list:
+def rileva_oggetti(model: "YoloDetector", path: str) -> list:
     """
-    Rileva oggetti in un'immagine con YOLOv8.
-    Restituisce lista di dizionari con oggetto, confidenza e bounding box.
+    Wrapper di compatibilità: delega all'istanza YoloDetector condivisa con
+    computer_vision (motore di inferenza unico, vedi obj_detection.py). Tenuto
+    con questa firma per non toccare i call site già esistenti in app.py.
     """
-    try:
-        # verbose=False per non stampare output YOLO ad ogni immagine
-        risultati = model(path, verbose=False, conf=CONFIDENZA_MINIMA)
-
-        oggetti = []
-        for r in risultati:
-            for box in r.boxes:
-                oggetti.append({
-                    "oggetto":    model.names[int(box.cls)],
-                    "confidenza": round(float(box.conf), 3),
-                    "bbox_x1":    round(float(box.xyxy[0][0]), 1),
-                    "bbox_y1":    round(float(box.xyxy[0][1]), 1),
-                    "bbox_x2":    round(float(box.xyxy[0][2]), 1),
-                    "bbox_y2":    round(float(box.xyxy[0][3]), 1),
-                })
-
-        return oggetti
-
-    except Exception as e:
-        print(f"\n  ⚠️  Errore su {path}: {e}")
-        return []
+    return model.rileva_oggetti(path, conf=CONFIDENZA_MINIMA)
 
 
 # ─── Scan cartella ────────────────────────────────────────────────────────────
@@ -158,11 +157,11 @@ def processa_cartella(cartella: str, db_path: str = None):
 
     print(f"\n📂 Cartella:  {cartella}")
     print(f"🗄️  Database:  {db_path}")
-    print(f"🤖 Modello:   {MODELLO}")
+    print(f"🤖 Modello:   {MODELLO} ({MODALITA})")
     print(f"📊 Soglia:    {CONFIDENZA_MINIMA * 100:.0f}% confidenza minima")
     print(f"\n⏳ Caricamento modello YOLOv8 (solo la prima volta)...")
 
-    model = YOLO(MODELLO)
+    model = YoloDetector(MODELLO, conf=CONFIDENZA_MINIMA)
     print("✅ Modello pronto.\n")
 
     processati    = 0

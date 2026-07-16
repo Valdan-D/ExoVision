@@ -1,6 +1,13 @@
 """
 ExoVision — Estrazione keyframe dai video (scene detection) e inserimento in SQLite
-Dipendenze: pip install ffmpeg-python
+
+Motore primario: PySceneDetect (computer_vision.models.video_processor —
+condiviso con l'ingestion standalone di computer_vision/main.py). Se non
+disponibile, o se fallisce/non trova nulla, si ricade sul motore storico a
+scene detection ffmpeg — mai rimosso, resta la rete di sicurezza (compreso
+il suo fallback a frame singolo per i video senza tagli di scena).
+
+Dipendenze: pip install ffmpeg-python scenedetect
 FFmpeg deve essere installato sul sistema: https://ffmpeg.org/download.html
 """
 
@@ -21,6 +28,12 @@ except ImportError:
     FFMPEG_OK = False
     # NB: niente sys.exit qui — vedi commento equivalente in exovision_ocr.py
     # (importato anche da app.py per l'elaborazione in background).
+
+try:
+    from computer_vision.models.video_processor import rileva_scene_e_frame, SCENEDETECT_OK, CV2_OK
+except ImportError:
+    SCENEDETECT_OK = False
+    CV2_OK = False
 
 
 # ─── Configurazione ───────────────────────────────────────────────────────────
@@ -125,12 +138,33 @@ def _estrai_frame_singolo(path: str, cartella_out: Path, file_id: int, video_ste
 
 def estrai_keyframe(path: str, cartella_out: Path, file_id: int, video_stem: str) -> list:
     """
-    Estrae i keyframe di un video con scene detection ffmpeg.
+    Estrae i keyframe di un video con scene detection.
     Salva i frame come <cartella_out>/fr-<file_id>-<n>-<video_stem>.jpg
     (il file_id evita collisioni tra video con lo stesso nome in cartelle diverse)
-    e restituisce la lista {timestamp_sec, path_frame} nell'ordine di estrazione.
-    Se la scene detection non trova alcun taglio di scena (o fallisce), prova
-    a estrarre un singolo frame fisso come anteprima di riserva.
+    e restituisce la lista {timestamp_sec, path_frame} in ordine crescente.
+
+    Prova prima PySceneDetect (motore condiviso con computer_vision, in
+    genere più accurato nel trovare i tagli di scena reali); se non
+    disponibile, fallisce o non trova nulla, ricade sul motore storico a
+    scene detection ffmpeg (con il suo stesso fallback a frame singolo per
+    i video senza tagli di scena) — nessuna delle due strade viene rimossa.
+    """
+    if SCENEDETECT_OK and CV2_OK:
+        try:
+            frames = rileva_scene_e_frame(path, cartella_out, file_id, video_stem)
+            if frames:
+                return frames
+        except Exception as e:
+            print(f"  ⚠️  Errore motore PySceneDetect su {path}: {e} — ripiego su ffmpeg.")
+
+    return _estrai_keyframe_ffmpeg(path, cartella_out, file_id, video_stem)
+
+
+def _estrai_keyframe_ffmpeg(path: str, cartella_out: Path, file_id: int, video_stem: str) -> list:
+    """
+    Motore storico: scene detection via filtro ffmpeg. Usato come fallback
+    di estrai_keyframe() quando PySceneDetect non è disponibile o non
+    produce risultati.
     """
     prefisso = f"fr-{file_id}-"
     pattern  = str(cartella_out / f"{prefisso}%d-{video_stem}.jpg")

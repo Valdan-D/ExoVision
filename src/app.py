@@ -24,6 +24,7 @@ import exovision_caption as caption_pipeline
 from computer_vision.database import ExoVisionDB, CHROMA_OK
 from computer_vision.models.embedding import SigLIPEmbedder, SIGLIP_OK
 from computer_vision.models.face_rec import ExoFaceRecognizer, FACE_OK
+from computer_vision.models.obj_detection import YoloDetector
 
 app = Flask(__name__, static_folder="UI", static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB per richiesta di import
@@ -81,7 +82,7 @@ def _get_yolo_model():
     if _yolo_model is None and yolo_pipeline.YOLO_OK:
         with _model_lock:
             if _yolo_model is None:
-                _yolo_model = yolo_pipeline.YOLO(yolo_pipeline.MODELLO)
+                _yolo_model = YoloDetector(yolo_pipeline.MODELLO, conf=yolo_pipeline.CONFIDENZA_MINIMA)
     return _yolo_model
 
 def _get_whisper_model():

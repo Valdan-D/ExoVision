@@ -1,13 +1,97 @@
-from database import ExoVisionDB
 import os
 import sys
-import cv2
+from pathlib import Path
 from PIL import Image
-from moviepy.editor import VideoFileClip
-from faster_whisper import WhisperModel
 import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Import guardati con try/except: questo modulo è importato (per la sola
+# scene detection, vedi rileva_scene_e_frame più sotto) anche da
+# exovision_frames.py/app.py nel flusso principale, quindi non deve far
+# crashare l'import se una di queste librerie manca (stesso pattern di
+# ocr_pipeline.EASYOCR_OK). elabora_video()/_estrai_e_trascrivi_audio()
+# restano invariati per l'uso standalone di computer_vision/main.py.
+from computer_vision.database import ExoVisionDB
+
+try:
+    import cv2
+    CV2_OK = True
+except ImportError:
+    CV2_OK = False
+
+try:
+    from moviepy.editor import VideoFileClip
+    MOVIEPY_OK = True
+except ImportError:
+    MOVIEPY_OK = False
+
+try:
+    from faster_whisper import WhisperModel
+    FASTER_WHISPER_OK = True
+except ImportError:
+    FASTER_WHISPER_OK = False
+
+try:
+    from scenedetect import detect, ContentDetector
+    SCENEDETECT_OK = True
+except ImportError:
+    SCENEDETECT_OK = False
+
+
+def rileva_scene_e_frame(video_path: str, cartella_out, file_id: int, video_stem: str, soglia: float = 27.0) -> list:
+    """
+    Scene detection con PySceneDetect: estrae il primo frame di ogni scena
+    rilevata e lo salva come <cartella_out>/fr-<file_id>-<n>-<video_stem>.jpg
+    — stessa convenzione di naming di exovision_frames.py::estrai_keyframe(),
+    così è un sostituto diretto (stesso formato di ritorno) usabile da
+    exovision_frames.py senza toccare nessun chiamante a valle (tabella SQL
+    `frame`, /api/preview/<id>, ecc.).
+
+    Se PySceneDetect non rileva alcuna scena (video a piano fisso/continuo,
+    comune nei video brevi), estrae un singolo frame fisso a 1s come
+    anteprima di riserva — stessa garanzia del fallback storico in
+    exovision_frames.py._estrai_frame_singolo, per non perdere la copertura
+    di quel caso reale già risolto in passato.
+
+    Restituisce lista di {"path_frame": str, "timestamp_sec": float} in
+    ordine crescente di timestamp, oppure [] in caso di errore.
+    """
+    cartella_out = Path(cartella_out)
+    prefisso = f"fr-{file_id}-"
+
+    cap = cv2.VideoCapture(video_path)
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+
+        lista_scene = detect(video_path, ContentDetector(threshold=soglia))
+        indici_frame = [scena[0].get_frames() for scena in lista_scene]
+
+        if not indici_frame:
+            # Nessun taglio di scena: forziamo almeno un frame a 1s (o il
+            # primo disponibile su video più corti di 1s).
+            indici_frame = [min(int(fps * 1.0), max(int(total_frames) - 1, 0))]
+
+        risultati = []
+        for n, f_idx in enumerate(indici_frame, start=1):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            out_path = cartella_out / f"{prefisso}{n}-{video_stem}.jpg"
+            cv2.imwrite(str(out_path), frame)
+            risultati.append({
+                "path_frame": str(out_path),
+                "timestamp_sec": round(f_idx / fps, 2),
+            })
+
+        return risultati
+    except Exception as e:
+        print(f"  ⚠️  Errore PySceneDetect su {video_path}: {e}")
+        return []
+    finally:
+        cap.release()
 
 
 class VideoProcessor:
@@ -79,6 +163,7 @@ class VideoProcessor:
         # 2. Fase Video (Scene Detection)
         cap = cv2.VideoCapture(self.video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
 
         prev_hist = None
         frame_idx = 0

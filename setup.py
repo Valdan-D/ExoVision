@@ -180,6 +180,7 @@ def verifica_import():
         ("PIL",            "Pillow"),
         ("piexif",         "piexif"),
         ("ffmpeg",         "ffmpeg-python"),
+        ("scenedetect",    "scenedetect"),
         ("easyocr",        "easyocr"),
         ("chromadb",       "chromadb"),
         ("flask",          "flask"),
