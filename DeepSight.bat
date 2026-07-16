@@ -39,14 +39,29 @@ if not defined PYCMD (
     )
 )
 
+rem Nessuna 3.10/3.11/3.12 trovata: prima di arrenderci proviamo comunque
+rem "py -3" (qualunque Python 3.x il launcher trovi come default, es. 3.14 su
+rem una macchina dove è installata solo quella) invece di uscire subito.
+rem Meglio avviare con un avviso (vedi il controllo poco sotto) che bloccarsi
+rem con "Python non trovato" quando Python in realta' c'e', solo troppo recente.
+if not defined PYCMD (
+    where py >nul 2>&1
+    if not errorlevel 1 (
+        py -3 -c "pass" >nul 2>&1
+        if not errorlevel 1 set "PYCMD=py -3"
+    )
+)
+
 if not defined PYCMD (
     where python >nul 2>&1
-    if errorlevel 1 (
-        echo Python non trovato nel PATH. Installa Python 3.10-3.12 da https://www.python.org/downloads/
-        pause
-        exit /b 1
-    )
-    set "PYCMD=python"
+    if not errorlevel 1 set "PYCMD=python"
+)
+
+if not defined PYCMD (
+    echo Python non trovato nel PATH. Installa Python da https://www.python.org/downloads/
+    echo ^(idealmente 3.10-3.12: vedi l'avviso qui sotto se ne trovo una diversa^)
+    pause
+    exit /b 1
 )
 
 for /f "delims=" %%v in ('!PYCMD! -c "import sys;print(str(sys.version_info[0])+chr(46)+str(sys.version_info[1]))" 2^>nul') do set "PYVER=%%v"
