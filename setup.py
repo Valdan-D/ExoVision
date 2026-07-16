@@ -62,6 +62,38 @@ COMANDI_INSTALL_FFMPEG = {
 }
 
 
+def _refresh_path_windows():
+    """
+    Su Windows, un programma appena installato (es. via winget) aggiorna il
+    PATH persistito nel registro, ma questo processo Python ha già in memoria
+    una copia del PATH letta al suo avvio: senza un refresh, l'eseguibile
+    appena installato non verrebbe trovato da shutil.which() finché non si
+    riapre il terminale. Ricostruiamo os.environ["PATH"] leggendo i valori
+    aggiornati (sistema + utente) direttamente dal registro. Best-effort: se
+    qualcosa va storto, restiamo silenziosamente sul PATH già esistente.
+    """
+    if platform.system() != "Windows":
+        return
+    try:
+        import winreg
+        percorsi = []
+        for hive, sottochiave in (
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            (winreg.HKEY_CURRENT_USER, r"Environment"),
+        ):
+            try:
+                with winreg.OpenKey(hive, sottochiave) as key:
+                    valore, _ = winreg.QueryValueEx(key, "Path")
+                    if valore:
+                        percorsi.append(valore)
+            except OSError:
+                continue
+        if percorsi:
+            os.environ["PATH"] = ";".join(percorsi) + ";" + os.environ.get("PATH", "")
+    except Exception:
+        pass
+
+
 def check_ffmpeg():
     titolo("FFmpeg")
     if shutil.which("ffmpeg"):
@@ -88,6 +120,7 @@ def check_ffmpeg():
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             errore(f"Installazione automatica fallita ({e})")
         else:
+            _refresh_path_windows()
             if shutil.which("ffmpeg"):
                 ok("FFmpeg installato correttamente")
                 return True

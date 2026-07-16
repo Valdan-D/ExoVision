@@ -25,15 +25,25 @@ if not errorlevel 1 (
 
 rem Python 3.12 non trovato: proviamo a installarlo automaticamente con
 rem winget prima di ripiegare su altre versioni gia' presenti sulla macchina
-rem (stesso approccio gia' usato per FFmpeg in setup.py). Il launcher "py"
-rem legge le installazioni dal registro di Windows, non solo dal PATH: subito
-rem dopo l'installazione "py -3.12" e' gia' utilizzabile nella stessa sessione,
-rem senza dover riaprire il terminale.
+rem (stesso approccio gia' usato per FFmpeg in setup.py).
 if not defined PYCMD (
     where winget >nul 2>&1
     if not errorlevel 1 (
         echo Python 3.12 non trovato: provo a installarlo con winget...
         winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements
+
+        rem Winget aggiorna il PATH persistito nel registro, ma questa sessione
+        rem di cmd.exe ha in memoria una copia del PATH letta al suo avvio: se
+        rem "py"/"python" non erano gia' presenti su questa macchina prima
+        rem dell'installazione, senza questo refresh non verrebbero trovati
+        rem finche' non si riapre il terminale. Ricostruiamo il PATH della
+        rem sessione corrente leggendo i valori aggiornati dal registro.
+        set "PATH_SISTEMA="
+        set "PATH_UTENTE="
+        for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "PATH_SISTEMA=%%B"
+        for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "PATH_UTENTE=%%B"
+        set "PATH=!PATH_SISTEMA!;!PATH_UTENTE!;!PATH!"
+
         py -3.12 -c "pass" >nul 2>&1
         if not errorlevel 1 (
             set "PYCMD=py -3.12"
