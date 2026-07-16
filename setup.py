@@ -9,6 +9,7 @@ import os
 import subprocess
 import shutil
 import platform
+import importlib.util
 
 # Su Windows la console usa spesso una codepage (es. cp1252) che non sa
 # codificare i caratteri Unicode usati qui sotto (box-drawing, emoji, ecc.),
@@ -103,6 +104,56 @@ def check_ffmpeg():
     return False
 
 
+# ─── Bootstrap pip ────────────────────────────────────────────────────────────
+
+def pip_disponibile():
+    """True se il modulo 'pip' è importabile in questo interprete (serve per
+    poter eseguire `python -m pip install ...`)."""
+    return importlib.util.find_spec("pip") is not None
+
+
+def ripristina_pip():
+    """
+    Tenta di ripristinare pip nell'interprete corrente con ensurepip.
+
+    Capita, su alcune installazioni Windows (es. Python dal Microsoft Store,
+    o installazioni minime), che il Python usato per creare .venv non abbia
+    pip bootstrappato: 'python -m pip install' fallisce allora con
+    "No module named pip", un errore criptico se non spiegato. Prima di
+    arrenderci proviamo ad auto-risanare con ensurepip (incluso di norma
+    nella stdlib di Python).
+    """
+    avviso("pip non risulta disponibile in questo interprete Python — provo a ripristinarlo con ensurepip...")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "ensurepip", "--upgrade"],
+            capture_output=True, text=True
+        )
+    except Exception as e:
+        errore(f"Impossibile eseguire ensurepip: {e}")
+        result = None
+
+    importlib.invalidate_caches()
+    if result is not None and result.returncode == 0 and pip_disponibile():
+        ok("pip ripristinato correttamente")
+        return True
+
+    errore("Impossibile ripristinare pip automaticamente.")
+    if result is not None and result.stderr:
+        print(result.stderr[-500:])
+    avviso("Causa probabile: il Python usato per creare .venv non include pip")
+    avviso("(es. Python dal Microsoft Store, un'installazione minima senza ensurepip,")
+    avviso("o un venv creato con l'opzione --without-pip).")
+    if platform.system() == "Linux":
+        avviso("Su Debian/Ubuntu installa il pacchetto di sistema: sudo apt install python3-pip")
+        avviso("poi ricrea il venv: rm -rf .venv && ./launch.sh")
+    else:
+        avviso("Reinstalla Python dal sito ufficiale assicurandoti di NON deselezionare 'pip'")
+        avviso("durante l'installazione: https://www.python.org/downloads/")
+        avviso("Poi cancella la cartella .venv e rilancia DeepSight.bat per ricrearla.")
+    return False
+
+
 # ─── Installazione pip ────────────────────────────────────────────────────────
 
 def installa_requirements():
@@ -132,6 +183,10 @@ def installa_requirements():
 
         if mancanti:
             print(f"\n  ⏳ Installazione pacchetti mancanti...")
+
+            if not pip_disponibile() and not ripristina_pip():
+                return False
+
             # Su alcune distro Linux /tmp e' un tmpfs piccolo (es. 4 GB): pip vi
             # scarica/scompatta temporaneamente i pacchetti prima di installarli,
             # e un'installazione combinata di librerie IA pesanti (torch,
