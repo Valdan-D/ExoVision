@@ -12,6 +12,7 @@ import threading
 import queue
 from pathlib import Path
 from uuid import uuid4
+from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory, abort
 from werkzeug.utils import secure_filename
 
@@ -451,6 +452,7 @@ def _ensure_schema(conn: sqlite3.Connection):
         ("metadati_video", "data_creazione", "TEXT"),
         ("metadati_video", "gps_lat", "REAL"),
         ("metadati_video", "gps_lon", "REAL"),
+        ("oggetti", "origine", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE {tabella} ADD COLUMN {colonna} {tipo};")
@@ -737,9 +739,11 @@ def file_detail(file_id):
             "SELECT testo, lingua FROM didascalie WHERE file_id = ?", (file_id,)
         ).fetchone()
 
-        # Oggetti rilevati
+        # Oggetti rilevati (+ tag manuali, aggiunti/modificati dall'utente — vedi
+        # /api/file/<id>/tags). "origine" distingue i tag manuali (protetti da
+        # /api/file/<id>/reprocess, che ricalcola solo quelli automatici).
         oggetti = conn.execute("""
-            SELECT oggetto, confidenza, bbox_x1, bbox_y1, bbox_x2, bbox_y2
+            SELECT id, oggetto, confidenza, bbox_x1, bbox_y1, bbox_x2, bbox_y2, origine
             FROM oggetti
             WHERE file_id = ? AND oggetto IS NOT NULL
             ORDER BY confidenza DESC
@@ -1191,6 +1195,94 @@ def update_file_metadata(id):
         conn.close()
 
 
+# ── API — Tag (oggetti) modificabili a mano ────────────────────────────────────
+#
+# I tag rilevati da YOLO (tabella oggetti) non erano modificabili: se YOLO
+# sbagliava o non trovava nulla, l'utente non aveva modo di correggere. Questi
+# endpoint permettono di aggiungere/modificare/cancellare un tag a mano. I tag
+# toccati dall'utente (aggiunti o rinominati) vengono marcati origine='manuale'
+# e sopravvivono a un /api/file/<id>/reprocess (che ricalcola solo i tag YOLO).
+
+@app.route("/api/file/<int:id>/tags", methods=["POST"])
+def add_tag(id):
+    """Aggiunge un tag manuale a un file. Body JSON: {"tag": "..."}"""
+    data = request.get_json(silent=True) or {}
+    tag = (data.get("tag") or "").strip()
+    if not tag:
+        abort(400, description="Il tag non può essere vuoto.")
+
+    conn = get_db()
+    try:
+        if not conn.execute("SELECT id FROM files WHERE id = ?", (id,)).fetchone():
+            abort(404, description="File non trovato.")
+
+        # Evita duplicati (case-insensitive) sullo stesso file
+        esiste = conn.execute(
+            "SELECT id FROM oggetti WHERE file_id = ? AND oggetto IS NOT NULL AND LOWER(oggetto) = LOWER(?)",
+            (id, tag)
+        ).fetchone()
+        if esiste:
+            abort(409, description="Questo tag è già presente su questo file.")
+
+        cursor = conn.execute(
+            """
+            INSERT INTO oggetti (file_id, oggetto, confidenza, data_estrazione, origine)
+            VALUES (?, ?, NULL, ?, 'manuale')
+            """,
+            (id, tag, datetime.now().isoformat())
+        )
+        conn.commit()
+        return jsonify({"id": cursor.lastrowid, "oggetto": tag, "confidenza": None, "origine": "manuale"}), 201
+    finally:
+        conn.close()
+
+
+@app.route("/api/file/<int:id>/tags/<int:tag_id>", methods=["PUT"])
+def edit_tag(id, tag_id):
+    """Rinomina un tag esistente (auto o manuale). Body JSON: {"tag": "..."}"""
+    data = request.get_json(silent=True) or {}
+    tag = (data.get("tag") or "").strip()
+    if not tag:
+        abort(400, description="Il tag non può essere vuoto.")
+
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id FROM oggetti WHERE id = ? AND file_id = ?", (tag_id, id)
+        ).fetchone()
+        if not row:
+            abort(404, description="Tag non trovato per questo file.")
+
+        # Una volta rinominato a mano, il tag diventa "manuale" — altrimenti una
+        # rielaborazione lo cancellerebbe insieme al resto dei tag YOLO.
+        conn.execute(
+            "UPDATE oggetti SET oggetto = ?, origine = 'manuale' WHERE id = ?",
+            (tag, tag_id)
+        )
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route("/api/file/<int:id>/tags/<int:tag_id>", methods=["DELETE"])
+def delete_tag(id, tag_id):
+    """Cancella un tag (auto o manuale) da un file."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id FROM oggetti WHERE id = ? AND file_id = ?", (tag_id, id)
+        ).fetchone()
+        if not row:
+            abort(404, description="Tag non trovato per questo file.")
+
+        conn.execute("DELETE FROM oggetti WHERE id = ?", (tag_id,))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
 # ── API — File fantasma (record il cui file è sparito dal disco) ──────────────
 
 @app.route("/api/ghost")
@@ -1306,7 +1398,16 @@ def reprocess_file(id):
         cursor = conn.cursor()
         tabelle = ("ocr", "oggetti", "didascalie") if tipo == "foto" else ("frame", "trascrizioni", "oggetti", "didascalie")
         for tabella in tabelle:
-            cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
+            if tabella == "oggetti":
+                # I tag aggiunti/modificati a mano (origine='manuale') non vengono
+                # cancellati: solo quelli automatici (YOLO) vengono ricalcolati,
+                # altrimenti ogni rielaborazione cancellerebbe le correzioni manuali.
+                cursor.execute(
+                    "DELETE FROM oggetti WHERE file_id = ? AND (origine IS NULL OR origine != 'manuale')",
+                    (id,)
+                )
+            else:
+                cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
         conn.commit()
     finally:
         conn.close()

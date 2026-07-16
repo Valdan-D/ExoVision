@@ -74,6 +74,15 @@ def init_tabella_oggetti(conn: sqlite3.Connection):
         )
     """)
     conn.commit()
+    # "origine" ('yolo'/'manuale') distingue i tag rilevati automaticamente da
+    # quelli aggiunti/modificati a mano dall'utente (vedi /api/file/<id>/tags in
+    # app.py) — su un DB creato prima di questa colonna, aggiunta qui via ALTER
+    # TABLE (stesso pattern di app.py::_ensure_schema).
+    try:
+        conn.execute("ALTER TABLE oggetti ADD COLUMN origine TEXT;")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
 
 
 def file_gia_processato(conn: sqlite3.Connection, file_id: int) -> bool:
@@ -100,10 +109,14 @@ def inserisci_oggetti(conn: sqlite3.Connection, file_id: int, oggetti: list):
     """
     now = datetime.now().isoformat()
 
+    # origine='yolo' su tutte le righe automatiche (compreso il segnaposto
+    # vuoto): distingue queste righe dai tag manuali (origine='manuale', vedi
+    # /api/file/<id>/tags in app.py), che /api/file/<id>/reprocess deve
+    # preservare invece di cancellare insieme al resto.
     if not oggetti:
         conn.execute("""
-            INSERT INTO oggetti (file_id, oggetto, confidenza, data_estrazione)
-            VALUES (?, NULL, NULL, ?)
+            INSERT INTO oggetti (file_id, oggetto, confidenza, data_estrazione, origine)
+            VALUES (?, NULL, NULL, ?, 'yolo')
         """, (file_id, now))
     else:
         for o in oggetti:
@@ -113,8 +126,8 @@ def inserisci_oggetti(conn: sqlite3.Connection, file_id: int, oggetti: list):
             # schema, senza bisogno di una migrazione DB.
             conn.execute("""
                 INSERT INTO oggetti
-                    (file_id, oggetto, confidenza, bbox_x1, bbox_y1, bbox_x2, bbox_y2, data_estrazione)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (file_id, oggetto, confidenza, bbox_x1, bbox_y1, bbox_x2, bbox_y2, data_estrazione, origine)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'yolo')
             """, (
                 file_id,
                 o["oggetto"],
