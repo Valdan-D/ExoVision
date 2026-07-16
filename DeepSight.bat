@@ -23,6 +23,26 @@ if not errorlevel 1 (
     if not errorlevel 1 set "PYCMD=py -3.12"
 )
 
+rem Python 3.12 non trovato: proviamo a installarlo automaticamente con
+rem winget prima di ripiegare su altre versioni gia' presenti sulla macchina
+rem (stesso approccio gia' usato per FFmpeg in setup.py). Il launcher "py"
+rem legge le installazioni dal registro di Windows, non solo dal PATH: subito
+rem dopo l'installazione "py -3.12" e' gia' utilizzabile nella stessa sessione,
+rem senza dover riaprire il terminale.
+if not defined PYCMD (
+    where winget >nul 2>&1
+    if not errorlevel 1 (
+        echo Python 3.12 non trovato: provo a installarlo con winget...
+        winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements
+        py -3.12 -c "pass" >nul 2>&1
+        if not errorlevel 1 (
+            set "PYCMD=py -3.12"
+        ) else (
+            echo Installazione automatica non riuscita ^(o serve riavviare il terminale^) - provo altre versioni gia' presenti.
+        )
+    )
+)
+
 if not defined PYCMD (
     where py >nul 2>&1
     if not errorlevel 1 (
