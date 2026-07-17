@@ -1309,23 +1309,33 @@ def ghost_files():
 def delete_file(id):
     """
     Elimina definitivamente un record dal database (e tutte le righe collegate
-    nelle tabelle metadati_foto/metadati_video/ocr/oggetti/frame/trascrizioni).
-    Non tocca il file su disco: pensato per ripulire i "file fantasma" il cui
-    file è già sparito, non per cancellare file ancora presenti in archivio.
+    nelle tabelle metadati_foto/metadati_video/ocr/oggetti/frame/trascrizioni/
+    didascalie) e, se ancora presente, il file corrispondente su disco.
+    Usato sia per ripulire i "file fantasma" (file già sparito: la cancellazione
+    su disco è un no-op) sia per l'eliminazione esplicita di un file dall'archivio
+    dalla vista dettaglio.
     """
     conn = get_db()
     cursor = conn.cursor()
     try:
-        file_row = cursor.execute("SELECT id FROM files WHERE id = ?", (id,)).fetchone()
+        file_row = cursor.execute("SELECT id, path FROM files WHERE id = ?", (id,)).fetchone()
         if not file_row:
             abort(404, description="File non trovato nel database.")
 
-        for tabella in ("metadati_foto", "metadati_video", "ocr", "oggetti", "frame", "trascrizioni"):
+        for tabella in ("metadati_foto", "metadati_video", "ocr", "oggetti", "frame", "trascrizioni", "didascalie"):
             cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
         cursor.execute("DELETE FROM files WHERE id = ?", (id,))
 
         conn.commit()
-        return jsonify({"ok": True, "messaggio": "Record eliminato dal database."}), 200
+
+        path = file_row["path"]
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass  # file già assente o non raggiungibile: il record e' comunque stato rimosso dal DB
+
+        return jsonify({"ok": True, "messaggio": "File eliminato dal database e dall'archivio."}), 200
     except sqlite3.Error as e:
         conn.rollback()
         return jsonify({"errore": f"Errore del database: {str(e)}"}), 500
