@@ -9,6 +9,7 @@ import sqlite3
 import os
 import sys
 import json
+import shutil
 import threading
 import queue
 import subprocess
@@ -1256,6 +1257,61 @@ def save_config():
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
     return jsonify({"ok": True, "config": cfg})
+
+
+@app.route("/api/archive/migrate", methods=["POST"])
+def migrate_archive():
+    """
+    Sposta sul disco i file già indicizzati che si trovano nella VECCHIA
+    cartella archivio dentro la NUOVA (aggiornando files.path di conseguenza),
+    quando l'utente cambia Impostazioni → Percorso archivio e sceglie
+    esplicitamente di portare con sé i file già presenti nella cartella
+    precedente. I file indicizzati da altre cartelle (es. da riga di comando,
+    non dentro la vecchia cartella archivio) non vengono toccati: cambiare
+    questa impostazione non li rende "mancanti", semplicemente non fanno
+    parte dello spostamento.
+    """
+    data = request.get_json(silent=True) or {}
+    vecchia = data.get("vecchia_cartella")
+    nuova = data.get("nuova_cartella")
+    if not vecchia or not nuova:
+        abort(400, description="vecchia_cartella e nuova_cartella sono entrambi obbligatori.")
+
+    vecchia_path = Path(vecchia)
+    nuova_path = Path(nuova)
+    nuova_path.mkdir(parents=True, exist_ok=True)
+
+    if not vecchia_path.exists():
+        return jsonify({"ok": True, "spostati": 0, "errori": 0})
+
+    conn = get_db()
+    spostati, errori = 0, 0
+    try:
+        rows = conn.execute("SELECT id, path FROM files").fetchall()
+        for row in rows:
+            p = Path(row["path"])
+            try:
+                rel = p.resolve().relative_to(vecchia_path.resolve())
+            except (ValueError, OSError):
+                continue  # non e' dentro la vecchia cartella archivio: non lo tocchiamo
+
+            dest = nuova_path / rel
+            if dest.exists():
+                dest = dest.parent / f"{dest.stem}_{uuid4().hex[:8]}{dest.suffix}"
+
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if p.exists():
+                    shutil.move(str(p), str(dest))
+                conn.execute("UPDATE files SET path = ? WHERE id = ?", (str(dest), row["id"]))
+                spostati += 1
+            except (OSError, sqlite3.Error):
+                errori += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True, "spostati": spostati, "errori": errori})
 
 
 # ── Modifica manuale metadati e descrizione ─────────────────────────────────────

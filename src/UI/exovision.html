@@ -711,6 +711,7 @@
             <input type="text" id="archivePathInput" value="/home/utente/Immagini/ExoVisionArchive">
             <button class="btn secondary" id="browsePathBtn">Sfoglia…</button>
           </div>
+          <div id="archiveMigrationWarning" class="hidden" style="color:#d33;font-size:.8rem;margin-top:8px;font-weight:600;"></div>
         </div>
 
         <div class="settings-row">
@@ -1455,14 +1456,18 @@
   /* ============================================================
      CONFIG API
   ============================================================ */
+  let percorsoArchivioCaricato = null;
+
   async function loadConfig() {
     try {
       const res = await fetch("/api/config");
       if (!res.ok) return;
       const cfg = await res.json();
 
-      if (cfg.archivio?.percorso !== undefined)
+      if (cfg.archivio?.percorso !== undefined) {
         archivePathInput.value = cfg.archivio.percorso;
+        percorsoArchivioCaricato = cfg.archivio.percorso;
+      }
 
       if (cfg.video?.frame_interval_secondi !== undefined) {
         frameIntervalSlider.value = cfg.video.frame_interval_secondi;
@@ -1497,9 +1502,34 @@
   }
 
   async function saveConfig() {
+    const archiveMigrationWarning = document.getElementById("archiveMigrationWarning");
+    archiveMigrationWarning.classList.add("hidden");
+
+    const nuovoPercorso = archivePathInput.value.trim();
+    const percorsoCambiato = !!(percorsoArchivioCaricato && nuovoPercorso && nuovoPercorso !== percorsoArchivioCaricato);
+    let vuoiSpostare = false;
+
+    if (percorsoCambiato) {
+      const confermato = confirm(
+        `Stai per cambiare la cartella archivio:\n\nDa: ${percorsoArchivioCaricato}\nA:  ${nuovoPercorso}\n\nSei sicuro?`
+      );
+      if (!confermato) return;
+
+      vuoiSpostare = confirm(
+        "Vuoi spostare nella nuova cartella anche i file già indicizzati che si trovano in quella precedente?"
+      );
+      if (!vuoiSpostare) {
+        archiveMigrationWarning.textContent =
+          "Attenzione: i file già indicizzati nella cartella precedente NON sono stati spostati e restano dove sono. " +
+          "Se in futuro quella cartella viene rinominata, spostata o eliminata, quelle foto e quei video risulteranno " +
+          "introvabili nell'archivio.";
+        archiveMigrationWarning.classList.remove("hidden");
+      }
+    }
+
     const activeMode = modeSegmented.querySelector(".seg-btn.active")?.dataset.mode || "locale";
     const payload = {
-      archivio: { percorso: archivePathInput.value.trim() },
+      archivio: { percorso: nuovoPercorso },
       video:    { frame_interval_secondi: parseInt(frameIntervalSlider.value, 10) },
       ricerca:  {
         soglia_similarita: parseInt(thresholdSlider.value, 10) / 100,
@@ -1516,7 +1546,27 @@
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error(await res.text());
-      showToast("Impostazioni salvate");
+
+      if (percorsoCambiato && vuoiSpostare) {
+        const migRes = await fetch("/api/archive/migrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vecchia_cartella: percorsoArchivioCaricato, nuova_cartella: nuovoPercorso })
+        });
+        const migData = await migRes.json();
+        if (!migRes.ok) throw new Error(migData.errore || "Spostamento file fallito.");
+        showToast(
+          migData.errori
+            ? `Impostazioni salvate — ${migData.spostati} file spostati (${migData.errori} errori)`
+            : `Impostazioni salvate — ${migData.spostati} file spostati nella nuova cartella`
+        );
+        if (typeof loadMetaTable === "function") loadMetaTable();
+        if (typeof renderGrid === "function") renderGrid(searchInput.value);
+      } else {
+        showToast("Impostazioni salvate");
+      }
+
+      percorsoArchivioCaricato = nuovoPercorso;
       addLogEntry("info", "Impostazioni aggiornate dall'utente");
     } catch (e) {
       showToast("Errore nel salvataggio");
