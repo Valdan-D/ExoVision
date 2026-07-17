@@ -492,8 +492,9 @@ def search():
       { query, results: [ { id, nome_file, tipo, path, metadati_completi, anteprima } ] }
 
     NOTE PER SIMONE: questo endpoint usa una ricerca per parola chiave su OCR,
-    oggetti e trascrizioni audio. Quando search.py con ChromaDB sarà pronto,
-    sostituisci il corpo di questa funzione con la chiamata al motore semantico vero.
+    oggetti, trascrizioni audio, nome file e descrizione manuale. Quando
+    search.py con ChromaDB sarà pronto, sostituisci il corpo di questa
+    funzione con la chiamata al motore semantico vero.
     """
     query = request.args.get("q", "").strip()
     limit = int(request.args.get("limit", 20))
@@ -503,7 +504,7 @@ def search():
 
     conn = get_db()
     try:
-        # Ricerca mock su testo OCR, oggetti rilevati e trascrizioni audio
+        # Ricerca mock su testo OCR, oggetti rilevati, trascrizioni audio e descrizione manuale
         # TODO Simone: sostituire con ricerca vettoriale ChromaDB
         results = conn.execute("""
             SELECT DISTINCT
@@ -524,6 +525,7 @@ def search():
                 OR og.oggetto LIKE :q
                 OR f.nome_file LIKE :q
                 OR t.testo LIKE :q
+                OR f.descrizione LIKE :q
             LIMIT :limit
         """, {"q": f"%{query}%", "limit": limit}).fetchall()
 
