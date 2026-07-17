@@ -729,8 +729,16 @@
           <input type="checkbox" id="metaIncompleteOnly"> Solo metadati incompleti
         </label>
         <span class="subtle" id="metaCount"></span>
-        <button class="btn secondary" id="checkBacklogBtn" style="margin-left:auto;">Rileva file mai elaborati</button>
+        <button class="btn secondary" id="checkScanBtn" style="margin-left:auto;">Verifica nuovi file</button>
+        <button class="btn secondary" id="checkBacklogBtn">Rileva file mai elaborati</button>
         <button class="btn secondary" id="checkGhostBtn">Rileva file mancanti</button>
+      </div>
+      <div id="scanPanel" class="hidden" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;background:var(--bg-elevated);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">
+          <strong id="scanSummary" style="font-size:.9rem;"></strong>
+          <button class="btn" id="scanImportAllBtn" style="padding:6px 12px;font-size:.8rem;">Aggiungi e analizza tutti</button>
+        </div>
+        <div id="scanList"></div>
       </div>
       <div id="backlogPanel" class="hidden" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;background:var(--bg-elevated);">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">
@@ -1680,6 +1688,65 @@
 
   metaSearchInput.addEventListener("input", renderMetaTable);
   metaIncompleteOnly.addEventListener("change", renderMetaTable);
+
+  /* ---------- Nuovi file nella cartella archivio (rilevamento + indicizzazione) ---------- */
+  const checkScanBtn    = document.getElementById("checkScanBtn");
+  const scanPanel       = document.getElementById("scanPanel");
+  const scanSummary     = document.getElementById("scanSummary");
+  const scanList        = document.getElementById("scanList");
+  const scanImportAllBtn = document.getElementById("scanImportAllBtn");
+
+  function renderScanList(items) {
+    scanSummary.textContent = items.length
+      ? `${items.length} file nuovi trovati nella cartella archivio, non ancora nel database`
+      : "Nessun file nuovo trovato: l'archivio è già tutto indicizzato.";
+    scanImportAllBtn.classList.toggle("hidden", items.length === 0);
+    scanList.innerHTML = items.map(item => `
+      <div class="meta-row">
+        <span>${escapeHtml(item.nome_file)} <span class="subtle">(${item.tipo})</span></span>
+      </div>
+    `).join("") || "";
+  }
+
+  async function checkNewFiles() {
+    checkScanBtn.disabled = true;
+    try {
+      const res = await fetch("/api/scan");
+      const data = await res.json();
+      scanPanel.classList.remove("hidden");
+      renderScanList(data.results || []);
+    } catch (e) {
+      scanPanel.classList.remove("hidden");
+      scanSummary.textContent = "Errore nel rilevamento dei nuovi file.";
+      scanList.innerHTML = "";
+      scanImportAllBtn.classList.add("hidden");
+    } finally {
+      checkScanBtn.disabled = false;
+    }
+  }
+
+  checkScanBtn.addEventListener("click", checkNewFiles);
+
+  scanImportAllBtn.addEventListener("click", async () => {
+    scanImportAllBtn.disabled = true;
+    scanImportAllBtn.textContent = "Analisi in corso…";
+    try {
+      const res = await fetch("/api/scan/import", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.errore || "Indicizzazione fallita.");
+      showToast(data.errori
+        ? `Aggiunti ${data.indicizzati} file (${data.errori} errori) — elaborazione IA avviata in background`
+        : `Aggiunti ${data.indicizzati} file — elaborazione IA avviata in background`);
+      await checkNewFiles();
+      loadMetaTable();
+      if (typeof renderGrid === "function") renderGrid(searchInput.value);
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      scanImportAllBtn.disabled = false;
+      scanImportAllBtn.textContent = "Aggiungi e analizza tutti";
+    }
+  });
 
   /* ---------- File fantasma (rilevamento + eliminazione manuale) ---------- */
   const checkGhostBtn     = document.getElementById("checkGhostBtn");

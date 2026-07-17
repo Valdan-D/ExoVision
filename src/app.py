@@ -1094,6 +1094,92 @@ def import_files():
     return jsonify({"indicizzati": indicizzati, "saltati": saltati, "errori": errori})
 
 
+def _tipo_supportato(ext: str) -> str | None:
+    if ext in metadata_pipeline.FOTO_EXT:
+        return "foto"
+    if ext in metadata_pipeline.VIDEO_EXT:
+        return "video"
+    return None
+
+
+def _trova_file_non_indicizzati() -> list:
+    """
+    Confronta i file presenti nella cartella archivio (vedi _cartella_archivio)
+    con quelli già in files.path e restituisce quelli mai visti dal database —
+    tipicamente file copiati manualmente sul disco invece che caricati dalla
+    tab Importa. Sola lettura, non modifica il database.
+    """
+    cartella = _cartella_archivio()
+    if not cartella.is_dir():
+        return []
+
+    conn = get_db()
+    try:
+        path_esistenti = {row["path"] for row in conn.execute("SELECT path FROM files").fetchall()}
+    finally:
+        conn.close()
+
+    trovati = []
+    for p in sorted(cartella.rglob("*")):
+        if not p.is_file():
+            continue
+        tipo = _tipo_supportato(p.suffix.lower())
+        if not tipo:
+            continue
+        path_str = str(p)
+        if path_str not in path_esistenti:
+            trovati.append({"path": path_str, "nome_file": p.name, "tipo": tipo})
+    return trovati
+
+
+@app.route("/api/scan")
+def scan_new_files():
+    """
+    Sola lettura: rileva i file (foto/video) presenti nella cartella archivio
+    ma mai indicizzati (assenti da files.path). Non modifica il database —
+    la vera indicizzazione avviene con POST /api/scan/import.
+    """
+    trovati = _trova_file_non_indicizzati()
+    return jsonify({"cartella": str(_cartella_archivio()), "totale": len(trovati), "results": trovati})
+
+
+@app.route("/api/scan/import", methods=["POST"])
+def scan_import_new_files():
+    """
+    Indicizza (step metadati, sincrono) tutti i file rilevati da GET /api/scan
+    e accoda l'elaborazione IA in background per ciascuno — stessa logica di
+    POST /api/import, ma per file già presenti sul disco dell'archivio invece
+    che caricati via upload.
+    """
+    trovati = _trova_file_non_indicizzati()
+    if not trovati:
+        return jsonify({"indicizzati": 0, "errori": 0})
+
+    conn = get_db()
+    indicizzati, errori = 0, 0
+    try:
+        for item in trovati:
+            path_str, tipo = item["path"], item["tipo"]
+            file_id = metadata_pipeline.inserisci_file(conn, path_str, tipo)
+            if not file_id:
+                errori += 1
+                continue
+
+            if tipo == "foto":
+                meta = metadata_pipeline.estrai_metadati_foto(path_str)
+                metadata_pipeline.inserisci_metadati_foto(conn, file_id, meta)
+            else:
+                meta = metadata_pipeline.estrai_metadati_video(path_str)
+                metadata_pipeline.inserisci_metadati_video(conn, file_id, meta)
+
+            _accoda_elaborazione(file_id, path_str, tipo)
+            indicizzati += 1
+    finally:
+        conn.close()
+
+    return jsonify({"indicizzati": indicizzati, "errori": errori})
+
+
 # ── API — Configurazione ─────────────────────────────────────────────────────
 
 @app.route("/api/config", methods=["GET"])
