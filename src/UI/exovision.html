@@ -134,7 +134,7 @@
   .hamburger.open span:nth-child(2){opacity:0;}
   .hamburger.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
   .brand-block{display:flex;flex-direction:column;line-height:1.1;}
-  .brand{font-family:var(--font-display);font-variation-settings:'opsz' 30;font-weight:600;font-size:1.2rem;color:var(--text);letter-spacing:.2px;display:flex;align-items:center;gap:8px;}
+  .brand{font-family:var(--font-display);font-variation-settings:'opsz' 30;font-weight:600;font-size:1.2rem;color:var(--text);letter-spacing:.2px;display:flex;align-items:center;gap:8px;cursor:pointer;background:none;border:none;padding:0;}
   .brand .mark{width:16px;height:16px;flex-shrink:0;color:var(--accent);animation:markPulse 3.4s ease-in-out infinite;}
   @keyframes markPulse{0%,100%{opacity:.55;transform:scale(.92);}50%{opacity:1;transform:scale(1);}}
   .brand .dot{color:var(--accent);}
@@ -589,7 +589,7 @@
   <div class="topbar">
     <button class="hamburger" id="hamburgerBtn" aria-label="Apri menu" aria-expanded="false"><span></span><span></span><span></span></button>
     <div class="brand-block">
-      <div class="brand">
+      <div class="brand" id="brandHome" role="button" tabindex="0" aria-label="Torna alla pagina principale">
         <svg class="mark" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.3"/>
           <circle cx="8" cy="8" r="1.4" fill="currentColor"/>
@@ -917,6 +917,10 @@
     n.addEventListener("click", () => switchView(n.dataset.view));
     n.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchView(n.dataset.view); } });
   });
+
+  const brandHome = document.getElementById("brandHome");
+  brandHome.addEventListener("click", () => switchView("search"));
+  brandHome.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchView("search"); } });
 
   /* ============================================================
      DARK MODE
