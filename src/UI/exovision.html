@@ -711,7 +711,6 @@
             <input type="text" id="archivePathInput" value="/home/utente/Immagini/ExoVisionArchive">
             <button class="btn secondary" id="browsePathBtn">Sfoglia…</button>
           </div>
-          <input type="file" id="hiddenDirInput" webkitdirectory style="display:none;">
         </div>
 
         <div class="settings-row">
@@ -1562,14 +1561,25 @@
   });
 
   const browsePathBtn = document.getElementById("browsePathBtn");
-  const hiddenDirInput = document.getElementById("hiddenDirInput");
   const archivePathInput = document.getElementById("archivePathInput");
-  browsePathBtn.addEventListener("click", () => hiddenDirInput.click());
-  hiddenDirInput.addEventListener("change", () => {
-    if (hiddenDirInput.files.length) {
-      const f = hiddenDirInput.files[0];
-      const folder = f.webkitRelativePath ? f.webkitRelativePath.split("/")[0] : f.name;
-      archivePathInput.value = "/" + folder;
+  // Un <input type="file" webkitdirectory> non può mai restituire il vero percorso
+  // assoluto di una cartella (limite di sicurezza dei browser: espone solo nome e
+  // percorsi relativi dei file), quindi il selettore si apre lato server (stessa
+  // macchina del browser, essendo ExoVision un'app locale) — vedi POST /api/browse-folder.
+  browsePathBtn.addEventListener("click", async () => {
+    browsePathBtn.disabled = true;
+    const testoOriginale = browsePathBtn.textContent;
+    browsePathBtn.textContent = "Attendere…";
+    try {
+      const res = await fetch("/api/browse-folder", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.errore || "Selettore cartelle non disponibile.");
+      if (data.percorso) archivePathInput.value = data.percorso;
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      browsePathBtn.disabled = false;
+      browsePathBtn.textContent = testoOriginale;
     }
   });
 

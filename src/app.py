@@ -7,9 +7,11 @@ Poi apri il browser su: http://localhost:5000
 
 import sqlite3
 import os
+import sys
 import json
 import threading
 import queue
+import subprocess
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
@@ -1186,6 +1188,49 @@ def scan_import_new_files():
 def get_config():
     """Restituisce il contenuto di config.json."""
     return jsonify(load_config())
+
+
+@app.route("/api/browse-folder", methods=["POST"])
+def browse_folder():
+    """
+    Apre un selettore di cartelle nativo del sistema operativo e restituisce
+    il percorso assoluto scelto dall'utente.
+
+    Necessario perché un browser non può mai restituire il vero percorso
+    assoluto di una cartella selezionata con <input type="file" webkitdirectory>
+    (limite di sicurezza di tutti i browser, non un bug risolvibile lato
+    frontend): quell'API espone solo il nome della cartella e i percorsi
+    relativi dei file al suo interno, mai la posizione reale sul disco.
+    Poiché ExoVision è un'app locale (server e browser sulla stessa macchina),
+    il dialogo viene aperto qui sul server, in un processo Python separato
+    (tkinter non è thread-safe: isolarlo evita conflitti con il thread pool
+    di Flask) che stampa il percorso scelto su stdout.
+    """
+    script = (
+        "import tkinter as tk, tkinter.filedialog as fd, sys\n"
+        "root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)\n"
+        "p = fd.askdirectory(title='Seleziona la cartella archivio')\n"
+        "root.destroy()\n"
+        "sys.stdout.write(p)\n"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True, timeout=300
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"errore": "Selezione della cartella scaduta (timeout)."}), 500
+    except Exception as e:
+        return jsonify({"errore": f"Selettore cartelle non disponibile: {e}"}), 500
+
+    if result.returncode != 0:
+        messaggio = "Selettore cartelle non disponibile su questo sistema."
+        if "No module named 'tkinter'" in (result.stderr or ""):
+            messaggio += " Su Linux installa il pacchetto di sistema (es. 'sudo apt install python3-tk')."
+        return jsonify({"errore": messaggio}), 500
+
+    percorso = result.stdout.strip()
+    return jsonify({"percorso": percorso or None})
 
 
 @app.route("/api/config", methods=["POST"])
