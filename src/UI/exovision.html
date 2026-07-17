@@ -1195,18 +1195,40 @@
     if (meta.gps_lat && meta.gps_lon) metaRows += `<div class="meta-row"><span>GPS</span><span>${meta.gps_lat.toFixed(5)}, ${meta.gps_lon.toFixed(5)}</span></div>`;
     
     // Ogni chip è modificabile: clic sul testo rinomina il tag, clic sulla ×
-    // lo cancella. I tag senza confidenza sono manuali (aggiunti a mano),
-    // niente percentuale accanto. Vedi wiring eventi più sotto (tagRenameHTML).
-    const oggettiChips = data.oggetti && data.oggetti.length ? data.oggetti.map(o => `
-      <span class="chip" style="display:inline-flex;align-items:center;gap:5px;">
+    // lo cancella, clic sull'omino lo marca/smarca come "nome persona" (usato
+    // per proporlo come tag su altri file dove ricompare lo stesso volto, vedi
+    // suggerimentiHTML più sotto). I tag senza confidenza sono manuali
+    // (aggiunti a mano), niente percentuale accanto. Vedi wiring eventi più
+    // sotto (tagRenameHTML).
+    const oggettiChips = data.oggetti && data.oggetti.length ? data.oggetti.map(o => {
+      const ePersona = o.origine === "persona";
+      return `
+      <span class="chip" style="display:inline-flex;align-items:center;gap:5px;${ePersona ? "border-color:var(--accent);" : ""}">
+        <span class="tag-persona-toggle" data-tag-id="${o.id}" data-attivo="${ePersona ? "1" : "0"}" style="cursor:pointer;opacity:${ePersona ? "1" : ".45"};" title="${ePersona ? "Nome persona: clicca per smarcare" : "Marca come nome di una persona"}">👤</span>
         <span class="tag-rename" data-tag-id="${o.id}" style="cursor:pointer;" title="Clicca per rinominare">${escapeHtml(o.oggetto)}${o.confidenza != null ? ` <span style="opacity:.6">${Math.round(o.confidenza * 100)}%</span>` : ""}</span>
         <span class="tag-remove" data-tag-id="${o.id}" style="cursor:pointer;opacity:.6;font-weight:700;" title="Rimuovi tag">×</span>
-      </span>`).join("") : '<span class="muted">Nessun oggetto rilevato</span>';
+      </span>`;
+    }).join("") : '<span class="muted">Nessun oggetto rilevato</span>';
     const addTagRow = `
       <div style="display:flex;gap:6px;margin-top:8px;">
         <input type="text" id="inputNuovoTag" placeholder="Aggiungi tag…" style="flex:1;padding:5px 8px;font-size:.8rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);">
         <button class="btn secondary" id="addTagBtn" style="padding:5px 10px;font-size:.8rem;">+</button>
       </div>`;
+    // Nomi persona suggeriti: stesso volto riconosciuto su un altro file che ha
+    // già un tag marcato "persona". Solo proposte cliccabili, mai applicate da
+    // sole — vedi POST /api/file/<id>/tags (accetta) e DELETE .../suggerimenti/<id> (rifiuta).
+    const suggerimentiHTML = data.suggerimenti_persona && data.suggerimenti_persona.length ? `
+      <div style="margin-top:10px;">
+        <span style="font-size:.85rem;color:var(--text-muted);">Persone suggerite (stesso volto rilevato altrove)</span>
+        <div class="chips" style="margin-top:8px;">
+          ${data.suggerimenti_persona.map(s => `
+            <span class="chip" style="display:inline-flex;align-items:center;gap:5px;border-style:dashed;">
+              <span>👤 ${escapeHtml(s.tag)}</span>
+              <span class="sugg-accept" data-sugg-id="${s.id}" data-tag="${escapeHtml(s.tag)}" style="cursor:pointer;color:var(--accent);font-weight:700;" title="Accetta suggerimento">✓</span>
+              <span class="sugg-reject" data-sugg-id="${s.id}" style="cursor:pointer;opacity:.6;font-weight:700;" title="Rifiuta suggerimento">×</span>
+            </span>`).join("")}
+        </div>
+      </div>` : "";
     const ocrBlock = ocr.testo ? `<blockquote class="ocr-text">${escapeHtml(ocr.testo)}</blockquote> <div class="subtle" style="margin-top:6px;">Confidenza: ${ocr.confidenza ? Math.round(ocr.confidenza * 100) + "%" : "—"}</div>` : '<p class="muted">Nessun testo rilevato.</p>';
     const trascrizioneBlock = trascrizione.testo
       ? `<blockquote class="ocr-text">${escapeHtml(trascrizione.testo)}</blockquote> <div class="subtle" style="margin-top:6px;">Lingua: ${trascrizione.lingua ? escapeHtml(trascrizione.lingua) : "—"} · Confidenza: ${trascrizione.confidenza ? Math.round(trascrizione.confidenza * 100) + "%" : "—"}</div>`
@@ -1243,6 +1265,7 @@
               <span style="font-size:.85rem;color:var(--text-muted);">Oggetti rilevati</span>
               <div class="chips" style="margin-top:8px;">${oggettiChips}</div>
               ${addTagRow}
+              ${suggerimentiHTML}
             </div>
           </div>
 
@@ -1442,6 +1465,59 @@
       addTagBtn.addEventListener("click", inviaNuovoTag);
       inputNuovoTag.addEventListener("keydown", e => { if (e.key === "Enter") inviaNuovoTag(); });
     }
+
+    detailBody.querySelectorAll(".tag-persona-toggle").forEach(el => {
+      el.addEventListener("click", async () => {
+        const attivo = el.dataset.attivo === "1";
+        try {
+          const res = await fetch(`/api/file/${id}/tags/${el.dataset.tagId}/persona`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ persona: !attivo })
+          });
+          if (!res.ok) throw new Error(await res.text());
+          openDetail(id);
+        } catch (e) {
+          alert("Errore durante la modifica del tag.");
+          console.error(e);
+        }
+      });
+    });
+
+    detailBody.querySelectorAll(".sugg-accept").forEach(el => {
+      el.addEventListener("click", async () => {
+        try {
+          const res = await fetch(`/api/file/${id}/tags`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tag: el.dataset.tag, origine: "persona" })
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.errore || "Errore sconosciuto");
+          }
+          await fetch(`/api/file/${id}/suggerimenti/${el.dataset.suggId}`, { method: "DELETE" });
+          openDetail(id);
+          if (typeof renderGrid === "function") renderGrid(searchInput.value);
+        } catch (e) {
+          alert("Errore durante l'accettazione del suggerimento: " + e.message);
+          console.error(e);
+        }
+      });
+    });
+
+    detailBody.querySelectorAll(".sugg-reject").forEach(el => {
+      el.addEventListener("click", async () => {
+        try {
+          const res = await fetch(`/api/file/${id}/suggerimenti/${el.dataset.suggId}`, { method: "DELETE" });
+          if (!res.ok) throw new Error(await res.text());
+          openDetail(id);
+        } catch (e) {
+          alert("Errore durante il rifiuto del suggerimento.");
+          console.error(e);
+        }
+      });
+    });
 
   } catch (e) {
     detailBody.innerHTML = '<p class="muted" style="padding:30px;">Errore nel caricamento del dettaglio.</p>';

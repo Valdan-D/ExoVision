@@ -180,12 +180,55 @@ def _calcola_ia_stato(tipo: str, has_ocr: bool, has_oggetti: bool, has_frame: bo
     return "parziale"
 
 
-def _indicizza_semantico_e_volti(file_id: int, img_path: str, oggetti: list):
+def _suggerisci_tag_persona(conn, file_id: int, corrispondenze: list):
+    """
+    Data una lista di corrispondenze volto (file_id_origine, distanza) trovate
+    in ChromaDB, propone come suggerimento ogni tag 'persona' già presente sui
+    file corrispondenti — non li applica mai da sola (vedi /api/file/<id>/tags
+    per l'accettazione manuale). Ripulisce prima i vecchi suggerimenti per non
+    accumulare proposte ormai superate ad ogni rielaborazione.
+    """
+    conn.execute("DELETE FROM suggerimenti_persona WHERE file_id = ?", (file_id,))
+
+    tag_gia_presenti = {
+        row["oggetto"].lower() for row in conn.execute(
+            "SELECT oggetto FROM oggetti WHERE file_id = ? AND oggetto IS NOT NULL", (file_id,)
+        ).fetchall()
+    }
+    gia_suggeriti = set()
+
+    for file_id_origine, distanza in corrispondenze:
+        tag_persona = conn.execute(
+            "SELECT oggetto FROM oggetti WHERE file_id = ? AND origine = 'persona' AND oggetto IS NOT NULL",
+            (file_id_origine,)
+        ).fetchall()
+        for row in tag_persona:
+            tag = row["oggetto"]
+            chiave = tag.lower()
+            if chiave in tag_gia_presenti or chiave in gia_suggeriti:
+                continue
+            gia_suggeriti.add(chiave)
+            conn.execute(
+                """
+                INSERT INTO suggerimenti_persona (file_id, tag, file_id_origine, distanza, creato_il)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (file_id, tag, file_id_origine, distanza, datetime.now().isoformat())
+            )
+    conn.commit()
+
+
+def _indicizza_semantico_e_volti(file_id: int, img_path: str, oggetti: list, conn=None):
     """
     Calcola l'embedding SigLIP dell'immagine (o del frame rappresentativo per i
     video) e, se è presente una persona, gli embedding ArcFace dei volti
     rilevati — entrambi salvati in ChromaDB. Usa upsert quindi rielaborare lo
     stesso file non crea duplicati.
+
+    Se un volto rilevato corrisponde (sotto la soglia configurata) a un volto
+    già presente su un altro file, e quel file ha un tag marcato come "nome
+    persona" (origine='persona'), propone quel tag come suggerimento su questo
+    file — non lo applica automaticamente, vedi _suggerisci_tag_persona.
     """
     tag_rilevati = [o["oggetto"] for o in oggetti if o.get("oggetto")]
 
@@ -211,10 +254,33 @@ def _indicizza_semantico_e_volti(file_id: int, img_path: str, oggetti: list):
             recognizer = _get_face_recognizer()
             vettori_volti = recognizer.estrai_vettore_volto(img_path)
             db.coll_volti.delete(where={"file_id": file_id})
+
+            # Cerca corrispondenze PRIMA di inserire i nuovi vettori (altrimenti
+            # un file con più volti troverebbe sé stesso come corrispondenza).
+            corrispondenze = []
+            if vettori_volti and conn is not None:
+                soglia = load_config().get("volti", {}).get("soglia_distanza", 0.68)
+                for vettore in vettori_volti:
+                    trovati   = db.cerca_volto_simile(vettore, n_risultati=5)
+                    distanze  = trovati.get("distances", [[]])[0]
+                    metadatas = trovati.get("metadatas", [[]])[0]
+                    for meta, distanza in zip(metadatas, distanze):
+                        fid_origine = meta.get("file_id")
+                        if fid_origine is None or fid_origine == file_id or distanza > soglia:
+                            continue
+                        corrispondenze.append((fid_origine, distanza))
+
             if vettori_volti:
                 ids = [f"face_{file_id}_{i}" for i in range(len(vettori_volti))]
                 metadatas = [{"file_id": file_id, "path": img_path} for _ in vettori_volti]
                 db.aggiungi_batch_volti(ids, vettori_volti, metadatas)
+
+            if conn is not None:
+                if corrispondenze:
+                    _suggerisci_tag_persona(conn, file_id, corrispondenze)
+                else:
+                    conn.execute("DELETE FROM suggerimenti_persona WHERE file_id = ?", (file_id,))
+                    conn.commit()
         except Exception as e:
             print(f"⚠️  Errore embedding volti in background su file {file_id}: {e}")
 
@@ -229,6 +295,7 @@ def _post_process_file(file_id: int, path: str, tipo: str):
         _in_progress_ids.add(file_id)
 
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
         if tipo == "foto":
             if ocr_pipeline.EASYOCR_OK:
@@ -260,7 +327,7 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                 except Exception as e:
                     print(f"⚠️  Errore didascalia in background su file {file_id}: {e}")
 
-            _indicizza_semantico_e_volti(file_id, path, oggetti)
+            _indicizza_semantico_e_volti(file_id, path, oggetti, conn=conn)
 
         else:  # video
             frame_rappresentativo = None
@@ -307,7 +374,7 @@ def _post_process_file(file_id: int, path: str, tipo: str):
                     except Exception as e:
                         print(f"⚠️  Errore didascalia (frame video) in background su file {file_id}: {e}")
 
-                _indicizza_semantico_e_volti(file_id, frame_rappresentativo, oggetti)
+                _indicizza_semantico_e_volti(file_id, frame_rappresentativo, oggetti, conn=conn)
     finally:
         conn.close()
         with _in_progress_lock:
@@ -445,6 +512,15 @@ def _ensure_schema(conn: sqlite3.Connection):
             testo            TEXT,
             lingua           TEXT,
             data_estrazione  TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS suggerimenti_persona (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id          INTEGER NOT NULL REFERENCES files(id),
+            tag              TEXT NOT NULL,
+            file_id_origine  INTEGER NOT NULL REFERENCES files(id),
+            distanza         REAL,
+            creato_il        TEXT
         );
     """)
     conn.commit()
@@ -754,6 +830,15 @@ def file_detail(file_id):
             ORDER BY confidenza DESC
         """, (file_id,)).fetchall()
 
+        # Nomi persona suggeriti da un volto riconosciuto su un altro file (vedi
+        # _suggerisci_tag_persona) — solo proposte, mai applicate senza conferma.
+        suggerimenti_persona = conn.execute("""
+            SELECT id, tag, file_id_origine, distanza
+            FROM suggerimenti_persona
+            WHERE file_id = ?
+            ORDER BY distanza ASC
+        """, (file_id,)).fetchall()
+
         # Immagini simili — via embedding SigLIP/ChromaDB se disponibile,
         # altrimenti fallback sulla vecchia query per tag YOLO condivisi.
         simili_ids = []
@@ -809,6 +894,7 @@ def file_detail(file_id):
                 "lingua": didascalia["lingua"] if didascalia else None,
             },
             "oggetti": [dict(o) for o in oggetti],
+            "suggerimenti_persona": [dict(s) for s in suggerimenti_persona],
             "simili": [
                 {
                     "id":        s["id"],
@@ -1394,11 +1480,19 @@ def update_file_metadata(id):
 
 @app.route("/api/file/<int:id>/tags", methods=["POST"])
 def add_tag(id):
-    """Aggiunge un tag manuale a un file. Body JSON: {"tag": "..."}"""
+    """
+    Aggiunge un tag manuale a un file. Body JSON: {"tag": "...", "origine": "manuale"|"persona"}.
+    "origine" è opzionale (default 'manuale') — usato dalla UI quando si accetta
+    un suggerimento di nome persona (vedi /api/file/<id>/suggerimenti), per marcare
+    subito il nuovo tag come 'persona' invece di doverlo poi promuovere a mano.
+    """
     data = request.get_json(silent=True) or {}
     tag = (data.get("tag") or "").strip()
     if not tag:
         abort(400, description="Il tag non può essere vuoto.")
+    origine = data.get("origine") or "manuale"
+    if origine not in ("manuale", "persona"):
+        abort(400, description="Origine non valida: usare 'manuale' o 'persona'.")
 
     conn = get_db()
     try:
@@ -1416,12 +1510,12 @@ def add_tag(id):
         cursor = conn.execute(
             """
             INSERT INTO oggetti (file_id, oggetto, confidenza, data_estrazione, origine)
-            VALUES (?, ?, NULL, ?, 'manuale')
+            VALUES (?, ?, NULL, ?, ?)
             """,
-            (id, tag, datetime.now().isoformat())
+            (id, tag, datetime.now().isoformat(), origine)
         )
         conn.commit()
-        return jsonify({"id": cursor.lastrowid, "oggetto": tag, "confidenza": None, "origine": "manuale"}), 201
+        return jsonify({"id": cursor.lastrowid, "oggetto": tag, "confidenza": None, "origine": origine}), 201
     finally:
         conn.close()
 
@@ -1437,16 +1531,19 @@ def edit_tag(id, tag_id):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT id FROM oggetti WHERE id = ? AND file_id = ?", (tag_id, id)
+            "SELECT id, origine FROM oggetti WHERE id = ? AND file_id = ?", (tag_id, id)
         ).fetchone()
         if not row:
             abort(404, description="Tag non trovato per questo file.")
 
         # Una volta rinominato a mano, il tag diventa "manuale" — altrimenti una
-        # rielaborazione lo cancellerebbe insieme al resto dei tag YOLO.
+        # rielaborazione lo cancellerebbe insieme al resto dei tag YOLO. Un tag
+        # già marcato "persona" resta tale attraverso la rinomina (correggere il
+        # nome non deve fargli perdere la marcatura, vedi /tags/<tag_id>/persona).
+        nuova_origine = "persona" if row["origine"] == "persona" else "manuale"
         conn.execute(
-            "UPDATE oggetti SET oggetto = ?, origine = 'manuale' WHERE id = ?",
-            (tag, tag_id)
+            "UPDATE oggetti SET oggetto = ?, origine = ? WHERE id = ?",
+            (tag, nuova_origine, tag_id)
         )
         conn.commit()
         return jsonify({"ok": True})
@@ -1466,6 +1563,57 @@ def delete_tag(id, tag_id):
             abort(404, description="Tag non trovato per questo file.")
 
         conn.execute("DELETE FROM oggetti WHERE id = ?", (tag_id,))
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@app.route("/api/file/<int:id>/tags/<int:tag_id>/persona", methods=["POST"])
+def toggle_tag_persona(id, tag_id):
+    """
+    Marca/smarca un tag come "nome persona" (origine='persona'). Body JSON:
+    {"persona": true|false}. Solo i tag marcati così vengono proposti come
+    suggerimento sugli altri file quando il volto corrispondente viene
+    riconosciuto altrove (vedi _suggerisci_tag_persona in _indicizza_semantico_e_volti).
+    """
+    data = request.get_json(silent=True) or {}
+    persona = bool(data.get("persona"))
+
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id FROM oggetti WHERE id = ? AND file_id = ?", (tag_id, id)
+        ).fetchone()
+        if not row:
+            abort(404, description="Tag non trovato per questo file.")
+
+        conn.execute(
+            "UPDATE oggetti SET origine = ? WHERE id = ?",
+            ("persona" if persona else "manuale", tag_id)
+        )
+        conn.commit()
+        return jsonify({"ok": True, "origine": "persona" if persona else "manuale"})
+    finally:
+        conn.close()
+
+
+@app.route("/api/file/<int:id>/suggerimenti/<int:sugg_id>", methods=["DELETE"])
+def dismiss_suggerimento_persona(id, sugg_id):
+    """
+    Rimuove un suggerimento di nome persona: usato sia per rifiutarlo sia per
+    ripulirlo dopo che la UI lo ha già accettato (POST /api/file/<id>/tags con
+    lo stesso testo). Non tocca mai la tabella oggetti.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id FROM suggerimenti_persona WHERE id = ? AND file_id = ?", (sugg_id, id)
+        ).fetchone()
+        if not row:
+            abort(404, description="Suggerimento non trovato per questo file.")
+
+        conn.execute("DELETE FROM suggerimenti_persona WHERE id = ?", (sugg_id,))
         conn.commit()
         return jsonify({"ok": True})
     finally:
@@ -1513,6 +1661,11 @@ def delete_file(id):
 
         for tabella in ("metadati_foto", "metadati_video", "ocr", "oggetti", "frame", "trascrizioni", "didascalie"):
             cursor.execute(f"DELETE FROM {tabella} WHERE file_id = ?", (id,))
+        # I suggerimenti nome-persona referenziano il file sia come destinatario
+        # (file_id) sia come origine del volto riconosciuto (file_id_origine): un
+        # file cancellato non deve lasciare in nessuno dei due ruoli un riferimento
+        # pendente.
+        cursor.execute("DELETE FROM suggerimenti_persona WHERE file_id = ? OR file_id_origine = ?", (id, id))
         cursor.execute("DELETE FROM files WHERE id = ?", (id,))
 
         conn.commit()
@@ -1598,11 +1751,12 @@ def reprocess_file(id):
         tabelle = ("ocr", "oggetti", "didascalie") if tipo == "foto" else ("frame", "trascrizioni", "oggetti", "didascalie")
         for tabella in tabelle:
             if tabella == "oggetti":
-                # I tag aggiunti/modificati a mano (origine='manuale') non vengono
-                # cancellati: solo quelli automatici (YOLO) vengono ricalcolati,
-                # altrimenti ogni rielaborazione cancellerebbe le correzioni manuali.
+                # I tag aggiunti/modificati a mano (origine='manuale') o marcati
+                # come nome persona (origine='persona') non vengono cancellati:
+                # solo quelli automatici (YOLO) vengono ricalcolati, altrimenti
+                # ogni rielaborazione cancellerebbe le correzioni manuali.
                 cursor.execute(
-                    "DELETE FROM oggetti WHERE file_id = ? AND (origine IS NULL OR origine != 'manuale')",
+                    "DELETE FROM oggetti WHERE file_id = ? AND (origine IS NULL OR origine NOT IN ('manuale', 'persona'))",
                     (id,)
                 )
             else:
